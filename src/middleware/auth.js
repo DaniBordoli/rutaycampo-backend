@@ -23,9 +23,9 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
-export const authorize = (roles) => {
+export const authorize = (...roles) => {
   return (req, res, next) => {
-    const allowedRoles = Array.isArray(roles) ? roles : [roles];
+    const allowedRoles = roles.flat();
     if (!allowedRoles.includes(req.user.rol)) {
       return res.status(403).json({ 
         message: 'No tienes permisos para realizar esta acción' 

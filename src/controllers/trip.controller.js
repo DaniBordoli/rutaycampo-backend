@@ -3,13 +3,38 @@ import { io } from '../server.js';
 
 export const createTrip = async (req, res) => {
   try {
+    // Obtener el ID del productor
+    let productorId = null;
+    if (req.user.rol === 'productor') {
+      if (!req.user.productorId) {
+        return res.status(400).json({ 
+          message: 'Usuario productor no tiene un productor asociado. Contacte al administrador.' 
+        });
+      }
+      productorId = req.user.productorId;
+    } else if (req.body.productor) {
+      // Solo asignar si viene en el body (opcional para admin/operador)
+      productorId = req.body.productor;
+    }
+
+    // Generar número de viaje
+    const count = await Viaje.countDocuments();
+    const numeroViaje = `VJ-${String(count + 1).padStart(6, '0')}`;
+
     const viajeData = {
       ...req.body,
-      productor: req.user.rol === 'productor' ? req.user.productorId : req.body.productor
+      numeroViaje
     };
 
+    // Solo agregar productor si existe
+    if (productorId) {
+      viajeData.productor = productorId;
+    }
+
     const viaje = await Viaje.create(viajeData);
-    await viaje.populate('productor');
+    if (viaje.productor) {
+      await viaje.populate('productor');
+    }
 
     res.status(201).json({
       message: 'Viaje creado exitosamente',
@@ -119,6 +144,47 @@ export const updateTripStatus = async (req, res) => {
       message: 'Estado actualizado exitosamente',
       trip: viaje
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const proposePrice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { price } = req.body;
+
+    const viaje = await Viaje.findById(id);
+    if (!viaje) {
+      return res.status(404).json({ message: 'Viaje no encontrado' });
+    }
+
+    // Verificar que el usuario sea el productor del viaje
+    if (req.user.rol === 'productor' && viaje.productor.toString() !== req.user.productorId.toString()) {
+      return res.status(403).json({ message: 'No tienes permiso para proponer precio en este viaje' });
+    }
+
+    viaje.precioPropuesto = price;
+    await viaje.save();
+
+    res.json({
+      message: 'Precio propuesto exitosamente',
+      trip: viaje
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteTrip = async (req, res) => {
+  try {
+    const viaje = await Viaje.findByIdAndDelete(req.params.id);
+    
+    if (!viaje) {
+      return res.status(404).json({ message: 'Viaje no encontrado' });
+    }
+
+    res.json({ message: 'Viaje eliminado exitosamente' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

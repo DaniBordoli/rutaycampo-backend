@@ -39,7 +39,9 @@ const usuarioSchema = new mongoose.Schema({
   transportistaId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Transportista'
-  }
+  },
+  resetPasswordToken: String,
+  resetPasswordExpires: Date
 }, {
   timestamps: true
 });

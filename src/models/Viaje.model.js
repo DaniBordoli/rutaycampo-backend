@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const checkInSchema = new mongoose.Schema({
   tipo: {
     type: String,
-    enum: ['llegue_a_cargar', 'cargado', 'sali', 'descargue'],
+    enum: ['llegue_a_cargar', 'cargado_saliendo', 'en_camino', 'llegue_a_destino', 'descargado'],
     required: true
   },
   fechaHora: {
@@ -25,8 +25,7 @@ const viajeSchema = new mongoose.Schema({
   },
   productor: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Productor',
-    required: true
+    ref: 'Productor'
   },
   origen: {
     direccion: { type: String, required: true },
@@ -91,6 +90,11 @@ const viajeSchema = new mongoose.Schema({
     enum: ['solicitado', 'cotizando', 'confirmado', 'en_asignacion', 'en_curso', 'finalizado'],
     default: 'solicitado'
   },
+  subEstado: {
+    type: String,
+    enum: ['llegue_a_cargar', 'cargado_saliendo', 'en_camino', 'llegue_a_destino', 'descargado'],
+    default: null
+  },
   precios: {
     precioBase: Number,
     precioPropuesto: Number,
@@ -107,6 +111,25 @@ const viajeSchema = new mongoose.Schema({
     longitud: Number,
     ultimaActualizacion: Date
   },
+  trackingToken: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  trackingActivo: {
+    type: Boolean,
+    default: false
+  },
+  rutaCompleta: [{
+    latitud: Number,
+    longitud: Number,
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    velocidad: Number,
+    precision: Number
+  }],
   distancia: Number,
   duracionEstimada: Number,
   historialEstados: [{

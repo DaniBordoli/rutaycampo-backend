@@ -4,7 +4,8 @@ import {
   getProducers,
   getProducerById,
   updateProducer,
-  deleteProducer
+  deleteProducer,
+  createProducerAccess
 } from '../controllers/producer.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
@@ -17,5 +18,6 @@ router.get('/', getProducers);
 router.get('/:id', getProducerById);
 router.put('/:id', authorize(['superadmin', 'operador']), updateProducer);
 router.delete('/:id', authorize(['superadmin']), deleteProducer);
+router.post('/:id/create-access', authorize(['superadmin', 'operador']), createProducerAccess);
 
 export default router;
