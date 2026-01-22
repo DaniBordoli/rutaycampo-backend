@@ -65,19 +65,14 @@ export const updateRate = async (req, res) => {
 
 export const deleteRate = async (req, res) => {
   try {
-    const tarifa = await Tarifa.findByIdAndUpdate(
-      req.params.id,
-      { activo: false },
-      { new: true }
-    );
+    const tarifa = await Tarifa.findByIdAndDelete(req.params.id);
 
     if (!tarifa) {
       return res.status(404).json({ message: 'Tarifa no encontrada' });
     }
 
     res.json({
-      message: 'Tarifa desactivada exitosamente',
-      rate: tarifa
+      message: 'Tarifa eliminada exitosamente'
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

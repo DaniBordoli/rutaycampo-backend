@@ -2,6 +2,8 @@ import Usuario from '../models/Usuario.model.js';
 import Productor from '../models/Productor.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { generateToken } from '../config/jwt.js';
+import crypto from 'crypto';
+import emailService from '../services/email.service.js';
 
 export const register = async (req, res) => {
   try {
@@ -80,6 +82,75 @@ export const getProfile = async (req, res) => {
       .populate('transportistaId');
 
     res.json({ user: usuario.toJSON() });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const usuario = await Usuario.findOne({ email });
+    if (!usuario) {
+      return res.status(404).json({ message: 'No existe un usuario con ese email' });
+    }
+
+    // Generar token de recuperación
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    usuario.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    usuario.resetPasswordExpires = Date.now() + 3600000; // 1 hora
+
+    await usuario.save();
+
+    // Enviar email con el token
+    try {
+      await emailService.sendPasswordResetEmail(email, resetToken, usuario.nombre);
+      
+      res.json({
+        message: 'Se ha enviado un email con las instrucciones para recuperar tu contraseña',
+        // En desarrollo, también devolver el token para facilitar testing
+        ...(process.env.NODE_ENV === 'development' && {
+          resetToken,
+          resetUrl: `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
+        })
+      });
+    } catch (emailError) {
+      // Si falla el envío del email, limpiar el token
+      usuario.resetPasswordToken = undefined;
+      usuario.resetPasswordExpires = undefined;
+      await usuario.save();
+      
+      throw new Error('Error al enviar el email de recuperación. Por favor, intenta nuevamente.');
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const usuario = await Usuario.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!usuario) {
+      return res.status(400).json({ message: 'Token inválido o expirado' });
+    }
+
+    // Actualizar contraseña
+    usuario.password = newPassword;
+    usuario.resetPasswordToken = undefined;
+    usuario.resetPasswordExpires = undefined;
+
+    await usuario.save();
+
+    res.json({ message: 'Contraseña actualizada exitosamente' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

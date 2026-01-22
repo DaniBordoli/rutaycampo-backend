@@ -31,7 +31,7 @@ const transportistaSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  telefono: {
+  numeroWhatsapp: {
     type: String,
     required: true,
     trim: true

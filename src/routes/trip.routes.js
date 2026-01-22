@@ -7,7 +7,9 @@ import {
   updateTripStatus,
   assignTransportista,
   addCheckIn,
-  updateLocation
+  updateLocation,
+  proposePrice,
+  deleteTrip
 } from '../controllers/trip.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -21,9 +23,11 @@ router.get('/', getTrips);
 router.get('/:id', getTripById);
 router.put('/:id', authorize('superadmin', 'operador'), updateTrip);
 router.patch('/:id/status', authorize('superadmin', 'operador'), updateTripStatus);
+router.patch('/:id/propose-price', authorize('productor', 'superadmin', 'operador'), proposePrice);
 router.post('/:id/assign', authorize('superadmin', 'operador'), assignTransportista);
 router.post('/:id/checkin', authorize('transportista', 'superadmin', 'operador'), addCheckIn);
 router.patch('/:id/location', authorize('transportista'), updateLocation);
+router.delete('/:id', authorize('superadmin', 'operador'), deleteTrip);
 
 router.post(
   '/:id/upload/carta-porte',
