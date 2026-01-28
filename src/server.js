@@ -13,6 +13,7 @@ import tripRoutes from './routes/trip.routes.js';
 import rateRoutes from './routes/rate.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import trackingRoutes from './routes/tracking.routes.js';
+import camionRoutes from './routes/camion.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 
@@ -61,6 +62,7 @@ app.use('/api/trips', tripRoutes);
 app.use('/api/rates', rateRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/tracking', trackingRoutes);
+app.use('/api/camiones', camionRoutes);
 
 app.use(errorHandler);
 

@@ -1,4 +1,5 @@
 import Transportista from '../models/Transportista.model.js';
+import Camion from '../models/Camion.model.js';
 
 export const createTransportista = async (req, res) => {
   try {
@@ -25,7 +26,18 @@ export const getTransportistas = async (req, res) => {
     }
 
     const transportistas = await Transportista.find(filter).sort({ razonSocial: 1 });
-    res.json(transportistas);
+    
+    const transportistasWithCamiones = await Promise.all(
+      transportistas.map(async (transportista) => {
+        const camiones = await Camion.find({ transportista: transportista._id });
+        return {
+          ...transportista.toObject(),
+          camiones
+        };
+      })
+    );
+    
+    res.json(transportistasWithCamiones);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -37,7 +49,13 @@ export const getTransportistaById = async (req, res) => {
     if (!transportista) {
       return res.status(404).json({ message: 'Transportista no encontrado' });
     }
-    res.json(transportista);
+
+    const camiones = await Camion.find({ transportista: req.params.id });
+
+    res.json({
+      ...transportista.toObject(),
+      camiones
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

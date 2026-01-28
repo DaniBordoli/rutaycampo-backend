@@ -6,30 +6,15 @@ const transportistaSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  nombre: {
+    type: String,
+    trim: true
+  },
   cuit: {
     type: String,
     required: true,
     unique: true,
     trim: true
-  },
-  nombreConductor: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  licenciaConductor: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  patente: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  capacidad: {
-    type: Number,
-    required: true
   },
   numeroWhatsapp: {
     type: String,
