@@ -1,41 +1,59 @@
 import Productor from '../models/Productor.model.js';
 import Usuario from '../models/Usuario.model.js';
 import { generateToken } from '../config/jwt.js';
+import crypto from 'crypto';
+import emailService from '../services/email.service.js';
 
 export const createProducer = async (req, res) => {
   try {
-    const { password, ...productorData } = req.body;
+    const productorData = req.body;
     
     const productor = await Productor.create(productorData);
     
-    // Si se proporciona password, crear usuario automáticamente
-    if (password) {
+    // Crear usuario con token de invitación
+    try {
+      const invitationToken = crypto.randomBytes(32).toString('hex');
+      const hashedToken = crypto.createHash('sha256').update(invitationToken).digest('hex');
+      
+      const usuario = await Usuario.create({
+        email: productorData.emailContacto,
+        rol: 'productor',
+        nombre: productorData.nombreContacto || productorData.razonSocial,
+        telefono: productorData.telefonoContacto,
+        productorId: productor._id,
+        invitationToken: hashedToken,
+        invitationExpires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 días
+        activo: false // Usuario inactivo hasta que configure su contraseña
+      });
+      
+      // Enviar email de invitación
       try {
-        const usuario = await Usuario.create({
-          email: productorData.emailContacto,
-          password,
-          rol: 'productor',
-          nombre: productorData.nombreContacto || productorData.razonSocial,
-          telefono: productorData.telefonoContacto,
-          productorId: productor._id
-        });
+        await emailService.sendProducerInvitationEmail(
+          productorData.emailContacto,
+          invitationToken,
+          productorData.nombreContacto || productorData.razonSocial
+        );
         
         res.status(201).json({
-          message: 'Productor y usuario creados exitosamente',
+          message: 'Productor creado exitosamente. Se ha enviado un email de invitación.',
           producer: productor,
-          userCreated: true
+          invitationSent: true,
+          // En desarrollo, devolver el token para facilitar testing
+          ...(process.env.NODE_ENV === 'development' && {
+            invitationToken,
+            invitationUrl: `${process.env.FRONTEND_PRODUCTORES_URL || 'http://localhost:5173'}/set-password/${invitationToken}`
+          })
         });
-      } catch (userError) {
-        // Si falla la creación del usuario, eliminar el productor creado
+      } catch (emailError) {
+        // Si falla el envío del email, eliminar usuario y productor
+        await Usuario.findByIdAndDelete(usuario._id);
         await Productor.findByIdAndDelete(productor._id);
-        throw new Error(`Error al crear usuario: ${userError.message}`);
+        throw new Error(`Error al enviar email de invitación: ${emailError.message}`);
       }
-    } else {
-      res.status(201).json({
-        message: 'Productor creado exitosamente',
-        producer: productor,
-        userCreated: false
-      });
+    } catch (userError) {
+      // Si falla la creación del usuario, eliminar el productor creado
+      await Productor.findByIdAndDelete(productor._id);
+      throw new Error(`Error al crear usuario: ${userError.message}`);
     }
   } catch (error) {
     res.status(500).json({ message: error.message });

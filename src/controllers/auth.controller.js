@@ -155,3 +155,47 @@ export const resetPassword = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const setPasswordFromInvitation = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token y contraseña son requeridos' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const usuario = await Usuario.findOne({
+      invitationToken: hashedToken,
+      invitationExpires: { $gt: Date.now() }
+    });
+
+    if (!usuario) {
+      return res.status(400).json({ message: 'Token de invitación inválido o expirado' });
+    }
+
+    // Configurar contraseña y activar usuario
+    usuario.password = password;
+    usuario.invitationToken = undefined;
+    usuario.invitationExpires = undefined;
+    usuario.activo = true;
+
+    await usuario.save();
+
+    // Generar token JWT para login automático
+    const authToken = generateToken(usuario._id, usuario.rol);
+
+    res.json({
+      message: 'Contraseña configurada exitosamente',
+      token: authToken,
+      user: usuario.toJSON()
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
