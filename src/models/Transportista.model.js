@@ -30,6 +30,10 @@ const transportistaSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  desactivadoHasta: {
+    type: Date,
+    default: null
+  },
   disponible: {
     type: Boolean,
     default: true

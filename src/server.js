@@ -17,6 +17,7 @@ import camionRoutes from './routes/camion.routes.js';
 import flotaRoutes from './routes/flota.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
+import { startReactivationJob } from './jobs/reactivateTransportistas.job.js';
 
 dotenv.config();
 
@@ -37,6 +38,8 @@ const io = new Server(httpServer, {
 });
 
 connectDB();
+
+startReactivationJob();
 
 app.use(helmet());
 app.use(cors({

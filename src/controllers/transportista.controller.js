@@ -110,3 +110,72 @@ export const toggleAvailability = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const deactivateTransportista = async (req, res) => {
+  try {
+    const { desactivadoHasta } = req.body;
+    const transportista = await Transportista.findById(req.params.id);
+    
+    if (!transportista) {
+      return res.status(404).json({ message: 'Transportista no encontrado' });
+    }
+
+    transportista.activo = false;
+    transportista.desactivadoHasta = desactivadoHasta || null;
+    await transportista.save();
+
+    const message = desactivadoHasta 
+      ? `Transportista desactivado hasta ${new Date(desactivadoHasta).toLocaleDateString('es-AR')}`
+      : 'Transportista desactivado indefinidamente';
+
+    res.json({
+      message,
+      transportista
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const activateTransportista = async (req, res) => {
+  try {
+    const transportista = await Transportista.findById(req.params.id);
+    
+    if (!transportista) {
+      return res.status(404).json({ message: 'Transportista no encontrado' });
+    }
+
+    transportista.activo = true;
+    transportista.desactivadoHasta = null;
+    await transportista.save();
+
+    res.json({
+      message: 'Transportista activado exitosamente',
+      transportista
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const checkAndReactivateTransportistas = async () => {
+  try {
+    const now = new Date();
+    const transportistasToReactivate = await Transportista.find({
+      activo: false,
+      desactivadoHasta: { $lte: now, $ne: null }
+    });
+
+    for (const transportista of transportistasToReactivate) {
+      transportista.activo = true;
+      transportista.desactivadoHasta = null;
+      await transportista.save();
+      console.log(`Transportista ${transportista.razonSocial} reactivado automáticamente`);
+    }
+
+    return transportistasToReactivate.length;
+  } catch (error) {
+    console.error('Error al reactivar transportistas:', error);
+    return 0;
+  }
+};

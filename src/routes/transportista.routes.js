@@ -5,7 +5,9 @@ import {
   getTransportistaById,
   updateTransportista,
   deleteTransportista,
-  toggleAvailability
+  toggleAvailability,
+  deactivateTransportista,
+  activateTransportista
 } from '../controllers/transportista.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
@@ -19,5 +21,7 @@ router.get('/:id', getTransportistaById);
 router.put('/:id', authorize(['superadmin', 'operador']), updateTransportista);
 router.delete('/:id', authorize(['superadmin']), deleteTransportista);
 router.patch('/:id/toggle-availability', authorize(['superadmin', 'operador']), toggleAvailability);
+router.patch('/:id/deactivate', authorize(['superadmin', 'operador']), deactivateTransportista);
+router.patch('/:id/activate', authorize(['superadmin', 'operador']), activateTransportista);
 
 export default router;
