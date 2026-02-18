@@ -1,9 +1,11 @@
-import Usuario from '../models/Usuario.model.js';
+﻿import Usuario from '../models/Usuario.model.js';
 import Productor from '../models/Productor.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { generateToken } from '../config/jwt.js';
 import crypto from 'crypto';
 import emailService from '../services/email.service.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const register = async (req, res) => {
   try {
@@ -45,8 +47,16 @@ export const register = async (req, res) => {
       user: usuario.toJSON()
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
+};
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días en ms
 };
 
 export const login = async (req, res) => {
@@ -65,14 +75,20 @@ export const login = async (req, res) => {
 
     const token = generateToken(usuario._id, usuario.rol);
 
+    res.cookie('token', token, cookieOptions);
     res.json({
       message: 'Login exitoso',
-      token,
       user: usuario.toJSON()
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
+};
+
+export const logout = (req, res) => {
+  res.clearCookie('token', cookieOptions);
+  res.json({ message: 'Sesión cerrada exitosamente' });
 };
 
 export const getProfile = async (req, res) => {
@@ -83,7 +99,8 @@ export const getProfile = async (req, res) => {
 
     res.json({ user: usuario.toJSON() });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -92,8 +109,12 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     const usuario = await Usuario.findOne({ email });
+    
+    // Siempre devolver el mismo mensaje para evitar enumeración de emails
+    const genericMessage = 'Si existe una cuenta asociada a ese correo electrónico, te enviaremos un enlace para recuperar tu contraseña';
+    
     if (!usuario) {
-      return res.status(404).json({ message: 'No existe un usuario con ese email' });
+      return res.json({ message: genericMessage });
     }
 
     // Generar token de recuperación
@@ -108,7 +129,7 @@ export const forgotPassword = async (req, res) => {
       await emailService.sendPasswordResetEmail(email, resetToken, usuario.nombre);
       
       res.json({
-        message: 'Se ha enviado un email con las instrucciones para recuperar tu contraseña',
+        message: genericMessage,
         // En desarrollo, también devolver el token para facilitar testing
         ...(process.env.NODE_ENV === 'development' && {
           resetToken,
@@ -124,7 +145,8 @@ export const forgotPassword = async (req, res) => {
       throw new Error('Error al enviar el email de recuperación. Por favor, intenta nuevamente.');
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -152,7 +174,8 @@ export const resetPassword = async (req, res) => {
 
     res.json({ message: 'Contraseña actualizada exitosamente' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -196,6 +219,8 @@ export const setPasswordFromInvitation = async (req, res) => {
       user: usuario.toJSON()
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+

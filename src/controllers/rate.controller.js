@@ -1,4 +1,6 @@
-import Tarifa from '../models/Tarifa.model.js';
+﻿import Tarifa from '../models/Tarifa.model.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const createRate = async (req, res) => {
   try {
@@ -8,7 +10,8 @@ export const createRate = async (req, res) => {
       rate: tarifa
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -24,7 +27,8 @@ export const getRates = async (req, res) => {
     const tarifas = await Tarifa.find(filter).sort({ createdAt: -1 });
     res.json({ rates: tarifas });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -38,7 +42,8 @@ export const getRateById = async (req, res) => {
 
     res.json({ rate: tarifa });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -59,7 +64,8 @@ export const updateRate = async (req, res) => {
       rate: tarifa
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -75,7 +81,8 @@ export const deleteRate = async (req, res) => {
       message: 'Tarifa eliminada exitosamente'
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -114,6 +121,8 @@ export const calculatePrice = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+

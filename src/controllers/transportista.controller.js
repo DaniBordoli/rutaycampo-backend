@@ -1,5 +1,7 @@
-import Transportista from '../models/Transportista.model.js';
+﻿import Transportista from '../models/Transportista.model.js';
 import Camion from '../models/Camion.model.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const createTransportista = async (req, res) => {
   try {
@@ -9,7 +11,8 @@ export const createTransportista = async (req, res) => {
       transportista
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -39,7 +42,8 @@ export const getTransportistas = async (req, res) => {
     
     res.json(transportistasWithCamiones);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -57,7 +61,8 @@ export const getTransportistaById = async (req, res) => {
       camiones
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -76,7 +81,8 @@ export const updateTransportista = async (req, res) => {
       transportista
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -88,7 +94,8 @@ export const deleteTransportista = async (req, res) => {
     }
     res.json({ message: 'Transportista eliminado exitosamente' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -107,7 +114,8 @@ export const toggleAvailability = async (req, res) => {
       transportista
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -133,7 +141,8 @@ export const deactivateTransportista = async (req, res) => {
       transportista
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -154,7 +163,8 @@ export const activateTransportista = async (req, res) => {
       transportista
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -179,3 +189,4 @@ export const checkAndReactivateTransportistas = async () => {
     return 0;
   }
 };
+

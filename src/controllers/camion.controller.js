@@ -1,5 +1,6 @@
 import Camion from '../models/Camion.model.js';
 import Transportista from '../models/Transportista.model.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
 
 export const createCamion = async (req, res) => {
   try {
@@ -38,7 +39,8 @@ export const createCamion = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al crear camión:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -62,7 +64,8 @@ export const getCamiones = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al obtener camiones:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -78,7 +81,8 @@ export const getCamionById = async (req, res) => {
     res.json(camion);
   } catch (error) {
     console.error('Error al obtener camión:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -123,7 +127,8 @@ export const updateCamion = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al actualizar camión:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -139,7 +144,8 @@ export const deleteCamion = async (req, res) => {
     res.json({ message: 'Camión eliminado exitosamente' });
   } catch (error) {
     console.error('Error al eliminar camión:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -160,7 +166,8 @@ export const toggleDisponibilidad = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al cambiar disponibilidad:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -187,7 +194,8 @@ export const getCamionesByTransportista = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al obtener camiones del transportista:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -224,6 +232,7 @@ export const assignCamionToTransportista = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al asignar camión:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };

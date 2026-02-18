@@ -3,60 +3,89 @@ import Usuario from '../models/Usuario.model.js';
 import { generateToken } from '../config/jwt.js';
 import crypto from 'crypto';
 import emailService from '../services/email.service.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
 
 export const createProducer = async (req, res) => {
   try {
     const productorData = req.body;
     
+    // Verificar si el CUIT ya existe
+    if (productorData.cuit) {
+      const existingProductor = await Productor.findOne({ cuit: productorData.cuit });
+      if (existingProductor) {
+        return res.status(409).json({ 
+          message: `El CUIT ${productorData.cuit} ya está registrado en el sistema`,
+          field: 'cuit'
+        });
+      }
+    }
+    
+    // Verificar si el email ya existe
+    if (productorData.emailContacto) {
+      const existingUser = await Usuario.findOne({ email: productorData.emailContacto });
+      if (existingUser) {
+        return res.status(409).json({ 
+          message: `El email ${productorData.emailContacto} ya está registrado en el sistema`,
+          field: 'email'
+        });
+      }
+    }
+    
     const productor = await Productor.create(productorData);
     
     // Crear usuario con token de invitación
+    const invitationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(invitationToken).digest('hex');
+    const contactName = [productorData.nombreContacto, productorData.apellidoContacto].filter(Boolean).join(' ') || productorData.razonSocial;
+
+    let invitationSent = false;
     try {
-      const invitationToken = crypto.randomBytes(32).toString('hex');
-      const hashedToken = crypto.createHash('sha256').update(invitationToken).digest('hex');
-      
-      const usuario = await Usuario.create({
+      await Usuario.create({
         email: productorData.emailContacto,
         rol: 'productor',
-        nombre: productorData.nombreContacto || productorData.razonSocial,
+        nombre: contactName,
         telefono: productorData.telefonoContacto,
         productorId: productor._id,
         invitationToken: hashedToken,
-        invitationExpires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 días
-        activo: false // Usuario inactivo hasta que configure su contraseña
+        invitationExpires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        activo: false
       });
-      
-      // Enviar email de invitación
+
       try {
         await emailService.sendProducerInvitationEmail(
           productorData.emailContacto,
           invitationToken,
-          productorData.nombreContacto || productorData.razonSocial
+          contactName
         );
-        
-        res.status(201).json({
-          message: 'Productor creado exitosamente. Se ha enviado un email de invitación.',
-          producer: productor,
-          invitationSent: true,
-          // En desarrollo, devolver el token para facilitar testing
-          ...(process.env.NODE_ENV === 'development' && {
-            invitationToken,
-            invitationUrl: `${process.env.FRONTEND_PRODUCTORES_URL || 'http://localhost:5173'}/set-password/${invitationToken}`
-          })
-        });
+        invitationSent = true;
       } catch (emailError) {
-        // Si falla el envío del email, eliminar usuario y productor
-        await Usuario.findByIdAndDelete(usuario._id);
-        await Productor.findByIdAndDelete(productor._id);
-        throw new Error(`Error al enviar email de invitación: ${emailError.message}`);
+        console.error('Error al enviar email de invitación (productor creado igual):', emailError.message);
       }
     } catch (userError) {
-      // Si falla la creación del usuario, eliminar el productor creado
-      await Productor.findByIdAndDelete(productor._id);
-      throw new Error(`Error al crear usuario: ${userError.message}`);
+      if (userError.code === 11000) {
+        await Productor.findByIdAndDelete(productor._id);
+        return res.status(409).json({
+          message: 'El email ingresado ya está registrado en el sistema.',
+          field: 'email'
+        });
+      }
+      console.error('Error al crear usuario para productor:', userError.message);
     }
+
+    res.status(201).json({
+      message: invitationSent
+        ? 'Productor creado exitosamente. Se ha enviado un email de invitación.'
+        : 'Productor creado exitosamente.',
+      producer: productor,
+      invitationSent,
+      ...(process.env.NODE_ENV === 'development' && {
+        invitationToken,
+        invitationUrl: `${process.env.FRONTEND_PRODUCTORES_URL || 'http://localhost:5173'}/set-password/${invitationToken}`
+      })
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -72,7 +101,8 @@ export const getProducers = async (req, res) => {
     const productores = await Productor.find(filter).sort({ razonSocial: 1 });
     res.json({ producers: productores });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -86,7 +116,8 @@ export const getProducerById = async (req, res) => {
 
     res.json({ producer: productor });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -107,7 +138,29 @@ export const updateProducer = async (req, res) => {
       producer: productor
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const toggleProducerActive = async (req, res) => {
+  try {
+    const productor = await Productor.findById(req.params.id);
+
+    if (!productor) {
+      return res.status(404).json({ message: 'Productor no encontrado' });
+    }
+
+    productor.activo = !productor.activo;
+    await productor.save();
+
+    res.json({
+      message: `Productor ${productor.activo ? 'activado' : 'desactivado'} exitosamente`,
+      producer: productor
+    });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -123,7 +176,8 @@ export const deleteProducer = async (req, res) => {
       message: 'Productor eliminado exitosamente'
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -146,7 +200,7 @@ export const createProducerAccess = async (req, res) => {
       email,
       password,
       rol: 'productor',
-      nombre: productor.nombreContacto || productor.razonSocial,
+      nombre: [productor.nombreContacto, productor.apellidoContacto].filter(Boolean).join(' ') || productor.razonSocial,
       telefono: productor.telefonoContacto,
       productorId: productor._id
     });
@@ -163,6 +217,7 @@ export const createProducerAccess = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };

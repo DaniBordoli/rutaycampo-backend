@@ -1,5 +1,7 @@
-import Flota from '../models/Flota.model.js';
+﻿import Flota from '../models/Flota.model.js';
 import Transportista from '../models/Transportista.model.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const createFlota = async (req, res) => {
   try {
@@ -28,7 +30,8 @@ export const createFlota = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al crear flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -62,7 +65,8 @@ export const getFlotas = async (req, res) => {
     res.json(flotas);
   } catch (error) {
     console.error('Error al obtener flotas:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -78,7 +82,8 @@ export const getFlotaById = async (req, res) => {
     res.json(flota);
   } catch (error) {
     console.error('Error al obtener flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -119,7 +124,8 @@ export const updateFlota = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al actualizar flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -133,7 +139,8 @@ export const deleteFlota = async (req, res) => {
     res.json({ message: 'Flota eliminada exitosamente' });
   } catch (error) {
     console.error('Error al eliminar flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -153,7 +160,8 @@ export const toggleActivaFlota = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al cambiar estado de flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -186,7 +194,8 @@ export const addTransportistaToFlota = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al agregar transportista a flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -212,6 +221,8 @@ export const removeTransportistaFromFlota = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al remover transportista de flota:', error);
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+

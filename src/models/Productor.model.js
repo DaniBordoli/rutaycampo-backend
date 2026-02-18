@@ -23,6 +23,11 @@ const productorSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  apellidoContacto: {
+    type: String,
+    required: true,
+    trim: true
+  },
   emailContacto: {
     type: String,
     required: true,
@@ -37,6 +42,11 @@ const productorSchema = new mongoose.Schema({
   numeroWhatsapp: {
     type: String,
     trim: true
+  },
+  tipoProduccion: {
+    type: String,
+    enum: ['Cereales', 'Oleaginosas', 'Ganadería', 'Mixto', 'Otro'],
+    required: true
   },
   activo: {
     type: Boolean,

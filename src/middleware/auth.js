@@ -3,7 +3,7 @@ import Usuario from '../models/Usuario.model.js';
 
 export const authenticate = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.cookies?.token;
 
     if (!token) {
       return res.status(401).json({ message: 'No se proporcionó token de autenticación' });

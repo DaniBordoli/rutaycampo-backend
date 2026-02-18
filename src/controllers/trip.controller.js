@@ -1,5 +1,7 @@
-import Viaje from '../models/Viaje.model.js';
+﻿import Viaje from '../models/Viaje.model.js';
 import { io } from '../server.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const createTrip = async (req, res) => {
   try {
@@ -41,7 +43,8 @@ export const createTrip = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -74,7 +77,8 @@ export const getTrips = async (req, res) => {
 
     res.json({ trips: viajes });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -90,7 +94,8 @@ export const getTripById = async (req, res) => {
 
     res.json({ trip: viaje });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -111,7 +116,8 @@ export const updateTrip = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -145,7 +151,8 @@ export const updateTripStatus = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -172,7 +179,8 @@ export const proposePrice = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -186,7 +194,8 @@ export const deleteTrip = async (req, res) => {
 
     res.json({ message: 'Viaje eliminado exitosamente' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -215,7 +224,8 @@ export const assignTransportista = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -254,7 +264,8 @@ export const addCheckIn = async (req, res) => {
       trip: viaje
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -285,6 +296,8 @@ export const updateLocation = async (req, res) => {
       location: viaje.ubicacionActual
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+

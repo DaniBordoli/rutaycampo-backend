@@ -1,8 +1,10 @@
-import Viaje from '../models/Viaje.model.js';
+﻿import Viaje from '../models/Viaje.model.js';
 import Transportista from '../models/Transportista.model.js';
 import WhatsAppSession from '../models/WhatsAppSession.model.js';
 import WhatsAppMessage from '../models/WhatsAppMessage.model.js';
 import whatsappService from '../services/whatsapp.service.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 export const sendOfferToCarriers = async (req, res) => {
   try {
@@ -63,7 +65,8 @@ export const sendOfferToCarriers = async (req, res) => {
       successful: results.filter(r => r.success).length
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -377,7 +380,8 @@ export const sendCheckInReminder = async (req, res) => {
 
     res.json({ message: 'Recordatorio enviado' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -394,6 +398,8 @@ export const sendTripUpdate = async (req, res) => {
 
     res.json({ message: 'Actualización enviada' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+

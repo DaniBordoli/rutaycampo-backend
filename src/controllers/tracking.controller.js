@@ -1,6 +1,8 @@
-import Viaje from '../models/Viaje.model.js';
+﻿import Viaje from '../models/Viaje.model.js';
 import crypto from 'crypto';
 import { io } from '../server.js';
+import { sanitizeError } from '../utils/sanitizeError.js';
+
 
 // Generar token único para tracking
 export const generateTrackingToken = async (req, res) => {
@@ -29,7 +31,8 @@ export const generateTrackingToken = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -60,7 +63,8 @@ export const getViajeByToken = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -85,7 +89,8 @@ export const startTracking = async (req, res) => {
 
     res.json({ message: 'Tracking iniciado', trackingActivo: true });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -110,7 +115,8 @@ export const stopTracking = async (req, res) => {
 
     res.json({ message: 'Tracking detenido', trackingActivo: false });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -173,7 +179,8 @@ export const updateLocation = async (req, res) => {
       totalPoints: viaje.rutaCompleta.length
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
 
@@ -194,6 +201,8 @@ export const getRutaCompleta = async (req, res) => {
       totalPoints: viaje.rutaCompleta?.length || 0
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
   }
 };
+
