@@ -26,11 +26,9 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175'
-];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
+  .split(',')
+  .map((o) => o.trim());
 
 const io = new Server(httpServer, {
   cors: {
@@ -44,26 +42,14 @@ connectDB();
 startReactivationJob();
 
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
-      upgradeInsecureRequests: [],
-    },
-  },
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
 }));
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(morgan('dev'));
 app.use(cookieParser());
