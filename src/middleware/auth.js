@@ -3,7 +3,8 @@ import Usuario from '../models/Usuario.model.js';
 
 export const authenticate = async (req, res, next) => {
   try {
-    const token = req.cookies?.token;
+    const authHeader = req.headers.authorization;
+    const token = req.cookies?.token || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
 
     if (!token) {
       return res.status(401).json({ message: 'No se proporcionó token de autenticación' });
