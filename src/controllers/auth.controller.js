@@ -180,6 +180,42 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+export const updateProfile = async (req, res) => {
+  try {
+    const { nombre, telefono, currentPassword, newPassword } = req.body;
+
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    if (nombre) usuario.nombre = nombre.trim();
+    if (telefono !== undefined) usuario.telefono = telefono.trim();
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Debes ingresar tu contraseña actual para cambiarla' });
+      }
+      const isMatch = await usuario.comparePassword(currentPassword);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+      }
+      usuario.password = newPassword;
+    }
+
+    await usuario.save();
+
+    const updatedUser = usuario.toJSON();
+    res.json({ message: 'Perfil actualizado exitosamente', user: updatedUser });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const setPasswordFromInvitation = async (req, res) => {
   try {
     const { token, password } = req.body;
