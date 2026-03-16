@@ -87,7 +87,7 @@ const viajeSchema = new mongoose.Schema({
   notas: String,
   estado: {
     type: String,
-    enum: ['solicitado', 'cotizando', 'confirmado', 'en_asignacion', 'en_curso', 'finalizado'],
+    enum: ['solicitado', 'confirmado', 'en_asignacion', 'en_curso', 'finalizado'],
     default: 'solicitado'
   },
   subEstado: {

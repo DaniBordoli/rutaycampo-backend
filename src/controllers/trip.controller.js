@@ -52,24 +52,18 @@ export const createTrip = async (req, res) => {
       viajeData.productor = productorId;
     }
 
-    // Calcular precio tentativo desde coordenadas + rangos de tarifa
+    // Calcular distanciaKm desde coordenadas si no viene provista
     const origenCoord = viajeData.origen?.coordenadas;
     const destinoCoord = viajeData.destino?.coordenadas;
     if (
+      !viajeData.distanciaKm &&
       origenCoord?.latitud && origenCoord?.longitud &&
-      destinoCoord?.latitud && destinoCoord?.longitud &&
-      viajeData.peso
+      destinoCoord?.latitud && destinoCoord?.longitud
     ) {
-      const distanciaKm = haversineKm(
+      viajeData.distanciaKm = Math.round(haversineKm(
         origenCoord.latitud, origenCoord.longitud,
         destinoCoord.latitud, destinoCoord.longitud
-      );
-      viajeData.distanciaKm = Math.round(distanciaKm);
-      const precioBase = await calcularPrecioTentativo(distanciaKm, viajeData.peso);
-      if (precioBase !== null) {
-        viajeData.precios = { ...(viajeData.precios || {}), precioBase };
-        viajeData.estado = 'cotizando';
-      }
+      ));
     }
 
     const viaje = await Viaje.create(viajeData);
@@ -276,7 +270,6 @@ export const proposePrice = async (req, res) => {
 
     if (!viaje.precios) viaje.precios = {};
     viaje.precios.precioPropuesto = price;
-    if (viaje.estado === 'solicitado') viaje.estado = 'cotizando';
     await viaje.save();
 
     res.json({
