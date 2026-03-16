@@ -105,6 +105,7 @@ const viajeSchema = new mongoose.Schema({
   },
   precios: {
     precioBase: Number,
+    tarifaKmTn: Number,
     precioPropuesto: Number,
     precioConfirmado: Number,
     precioFinal: Number

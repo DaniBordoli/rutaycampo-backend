@@ -187,7 +187,10 @@ export const confirmarTarifa = async (req, res) => {
     };
 
     if (!viaje.precios) viaje.precios = {};
-    if (precioSistema) viaje.precios.precioBase = precioSistema;
+    if (precioSistema) {
+      viaje.precios.precioBase = precioSistema;
+      viaje.precios.tarifaKmTn = precioSistema;
+    }
     if (precioProductor) viaje.precios.precioPropuesto = precioProductor;
     viaje.precios.precioConfirmado = precioFinal;
     viaje.precios.precioFinal = precioFinal;
