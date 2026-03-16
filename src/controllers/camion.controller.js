@@ -1,10 +1,12 @@
 import Camion from '../models/Camion.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
+import { uploadDocumentos, cloudinary } from '../services/cloudinary.service.js';
 
 export const createCamion = async (req, res) => {
   try {
-    const { transportista, patente, marca, modelo, año, tipo, capacidad, unidadCapacidad, seguro, vtv, notas } = req.body;
+    const { transportista, patente, marca, modelo, año, tipo, capacidad, unidadCapacidad, escalable, seguro, vtv, notas } = req.body;
 
     const transportistaExists = await Transportista.findById(transportista);
     if (!transportistaExists) {
@@ -25,6 +27,7 @@ export const createCamion = async (req, res) => {
       tipo,
       capacidad,
       unidadCapacidad,
+      escalable,
       seguro,
       vtv,
       notas
@@ -55,8 +58,8 @@ export const getCamiones = async (req, res) => {
     if (tipo) filter.tipo = tipo;
 
     const camiones = await Camion.find(filter)
-      .populate('transportista', 'razonSocial cuit numeroWhatsapp')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       total: camiones.length,
@@ -88,12 +91,14 @@ export const getCamionById = async (req, res) => {
 
 export const updateCamion = async (req, res) => {
   try {
-    const { patente, marca, modelo, año, tipo, capacidad, unidadCapacidad, seguro, vtv, disponible, activo, notas } = req.body;
+    const { patente, marca, modelo, año, tipo, capacidad, unidadCapacidad, escalable, seguro, vtv, disponible, activo, notas } = req.body;
 
     const camion = await Camion.findById(req.params.id);
     if (!camion) {
       return res.status(404).json({ message: 'Camión no encontrado' });
     }
+
+    const anterior = camion.toObject();
 
     if (patente && patente.toUpperCase() !== camion.patente) {
       const patenteExists = await Camion.findOne({ 
@@ -112,6 +117,7 @@ export const updateCamion = async (req, res) => {
     if (tipo !== undefined) camion.tipo = tipo;
     if (capacidad !== undefined) camion.capacidad = capacidad;
     if (unidadCapacidad !== undefined) camion.unidadCapacidad = unidadCapacidad;
+    if (escalable !== undefined) camion.escalable = escalable;
     if (seguro !== undefined) camion.seguro = seguro;
     if (vtv !== undefined) camion.vtv = vtv;
     if (disponible !== undefined) camion.disponible = disponible;
@@ -120,6 +126,29 @@ export const updateCamion = async (req, res) => {
 
     await camion.save();
     await camion.populate('transportista', 'razonSocial cuit');
+
+    const camposAuditables = ['patente', 'marca', 'modelo', 'año', 'tipo', 'capacidad', 'unidadCapacidad', 'escalable', 'disponible', 'activo', 'notas'];
+    const valorAnterior = {};
+    const valorNuevo = {};
+    camposAuditables.forEach(campo => {
+      if (JSON.stringify(anterior[campo]) !== JSON.stringify(camion[campo])) {
+        valorAnterior[campo] = anterior[campo];
+        valorNuevo[campo] = camion[campo];
+      }
+    });
+
+    if (Object.keys(valorNuevo).length > 0) {
+      await registrarAuditoria({
+        entidad: 'camion',
+        entidadId: camion._id,
+        accion: 'editar',
+        descripcion: `Camión editado: ${camion.patente}`,
+        valorAnterior,
+        valorNuevo,
+        realizadoPor: req.user._id,
+        ip: req.ip
+      });
+    }
 
     res.json({
       message: 'Camión actualizado exitosamente',
@@ -156,9 +185,21 @@ export const toggleDisponibilidad = async (req, res) => {
       return res.status(404).json({ message: 'Camión no encontrado' });
     }
 
+    const disponibleAnterior = camion.disponible;
     camion.disponible = !camion.disponible;
     await camion.save();
     await camion.populate('transportista', 'razonSocial cuit');
+
+    await registrarAuditoria({
+      entidad: 'camion',
+      entidadId: camion._id,
+      accion: camion.disponible ? 'activar' : 'desactivar',
+      descripcion: `Camión marcado como ${camion.disponible ? 'disponible' : 'no disponible'}: ${camion.patente}`,
+      valorAnterior: { disponible: disponibleAnterior },
+      valorNuevo: { disponible: camion.disponible },
+      realizadoPor: req.user._id,
+      ip: req.ip
+    });
 
     res.json({
       message: `Camión ${camion.disponible ? 'disponible' : 'no disponible'}`,
@@ -232,6 +273,76 @@ export const assignCamionToTransportista = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al asignar camión:', error);
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const uploadDocumentosHandler = (req, res) => {
+  uploadDocumentos(req, res, async (err) => {
+    if (err) {
+      console.error('❌ Error en uploadDocumentos (multer/cloudinary):', err);
+      return res.status(400).json({ message: err.message || 'Error al subir archivos' });
+    }
+
+    try {
+      const camion = await Camion.findById(req.params.id);
+      if (!camion) {
+        return res.status(404).json({ message: 'Camión no encontrado' });
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No se recibieron archivos' });
+      }
+
+      const nuevosDocumentos = req.files.map(file => ({
+        url: file.path,
+        nombre: file.originalname,
+        tipo: file.mimetype,
+        publicId: file.filename,
+        subidoEn: new Date(),
+      }));
+
+      camion.documentos.push(...nuevosDocumentos);
+      await camion.save();
+
+      res.json({
+        message: `${req.files.length} archivo(s) subido(s) exitosamente`,
+        documentos: camion.documentos,
+      });
+    } catch (error) {
+      console.error('Error al guardar documentos:', error);
+      const { status, message } = sanitizeError(error);
+      res.status(status).json({ message });
+    }
+  });
+};
+
+export const deleteDocumento = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+
+    const camion = await Camion.findById(id);
+    if (!camion) {
+      return res.status(404).json({ message: 'Camión no encontrado' });
+    }
+
+    const doc = camion.documentos.id(docId);
+    if (!doc) {
+      return res.status(404).json({ message: 'Documento no encontrado' });
+    }
+
+    if (doc.publicId) {
+      const resourceType = doc.tipo === 'application/pdf' ? 'raw' : 'image';
+      await cloudinary.uploader.destroy(doc.publicId, { resource_type: resourceType });
+    }
+
+    camion.documentos.pull(docId);
+    await camion.save();
+
+    res.json({ message: 'Documento eliminado exitosamente', documentos: camion.documentos });
+  } catch (error) {
+    console.error('Error al eliminar documento:', error);
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
   }

@@ -95,6 +95,14 @@ const viajeSchema = new mongoose.Schema({
     enum: ['llegue_a_cargar', 'cargado_saliendo', 'en_camino', 'llegue_a_destino', 'descargado'],
     default: null
   },
+  distanciaKm: {
+    type: Number,
+    default: null
+  },
+  pagoChofer: {
+    type: Number,
+    default: null
+  },
   precios: {
     precioBase: Number,
     precioPropuesto: Number,

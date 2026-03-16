@@ -1,8 +1,10 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import connectDB from './config/database.js';
@@ -15,6 +17,7 @@ import whatsappRoutes from './routes/whatsapp.routes.js';
 import trackingRoutes from './routes/tracking.routes.js';
 import camionRoutes from './routes/camion.routes.js';
 import flotaRoutes from './routes/flota.routes.js';
+import auditoriaRoutes from './routes/auditoria.routes.js';
 import cookieParser from 'cookie-parser';
 import { csrfProtection } from './middleware/csrf.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -73,6 +76,7 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/camiones', camionRoutes);
 app.use('/api/flotas', flotaRoutes);
+app.use('/api/auditoria', auditoriaRoutes);
 
 app.use(errorHandler);
 

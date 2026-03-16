@@ -1,5 +1,67 @@
 ﻿import Tarifa from '../models/Tarifa.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
+
+const validarRangos = (rangos) => {
+  if (!Array.isArray(rangos) || rangos.length === 0) {
+    return 'Debe haber al menos un rango.';
+  }
+  for (const r of rangos) {
+    if (r.startKm < 0 || r.endKm < 0) return 'Los kilómetros no pueden ser negativos.';
+    if (r.endKm <= r.startKm) return `El rango ${r.startKm}-${r.endKm} km es inválido: el final debe ser mayor al inicio.`;
+    if (!Number.isInteger(r.precioPorTonelada) || r.precioPorTonelada <= 0) {
+      return 'El precio por tonelada debe ser un número entero positivo.';
+    }
+  }
+  const sorted = [...rangos].sort((a, b) => a.startKm - b.startKm);
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (sorted[i].endKm >= sorted[i + 1].startKm) {
+      return `El rango ${sorted[i].startKm}-${sorted[i].endKm} km se superpone con ${sorted[i+1].startKm}-${sorted[i+1].endKm} km.`;
+    }
+  }
+  return null;
+};
+
+export const getConfigRangos = async (req, res) => {
+  try {
+    const config = await Tarifa.findOne({ esConfiguracionGlobal: true });
+    res.json({ rangos: config?.rangosKm || [] });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const saveConfigRangos = async (req, res) => {
+  try {
+    const { rangos } = req.body;
+    const errorMsg = validarRangos(rangos);
+    if (errorMsg) return res.status(400).json({ message: errorMsg });
+
+    const anterior = await Tarifa.findOne({ esConfiguracionGlobal: true });
+    const config = await Tarifa.findOneAndUpdate(
+      { esConfiguracionGlobal: true },
+      { esConfiguracionGlobal: true, rangosKm: rangos, activo: true },
+      { upsert: true, new: true, runValidators: true }
+    );
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: anterior ? 'editar' : 'crear',
+      entidad: 'tarifa',
+      entidadId: config._id,
+      descripcion: anterior ? 'Actualización de configuración de rangos de tarifas por km' : 'Creación de configuración de rangos de tarifas por km',
+      valorAnterior: anterior ? { rangosKm: anterior.rangosKm } : null,
+      valorNuevo: { rangosKm: rangos },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Configuración de tarifas guardada exitosamente', rangos: config.rangosKm });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
 
 
 export const createRate = async (req, res) => {

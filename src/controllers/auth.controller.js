@@ -5,6 +5,7 @@ import { generateToken } from '../config/jwt.js';
 import crypto from 'crypto';
 import emailService from '../services/email.service.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 
 export const register = async (req, res) => {
@@ -64,8 +65,11 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     const usuario = await Usuario.findOne({ email });
-    if (!usuario || !usuario.activo) {
+    if (!usuario) {
       return res.status(401).json({ message: 'Credenciales inválidas' });
+    }
+    if (!usuario.activo) {
+      return res.status(403).json({ message: 'Tu cuenta aún no está activada. Revisá tu email para configurar tu contraseña.', code: 'ACCOUNT_INACTIVE' });
     }
 
     const isMatch = await usuario.comparePassword(password);
@@ -189,9 +193,21 @@ export const updateProfile = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    if (nombre) usuario.nombre = nombre.trim();
-    if (telefono !== undefined) usuario.telefono = telefono.trim();
+    const valorAnterior = {};
+    const valorNuevo = {};
 
+    if (nombre && nombre.trim() !== usuario.nombre) {
+      valorAnterior.nombre = usuario.nombre;
+      valorNuevo.nombre = nombre.trim();
+      usuario.nombre = nombre.trim();
+    }
+    if (telefono !== undefined && telefono.trim() !== usuario.telefono) {
+      valorAnterior.telefono = usuario.telefono;
+      valorNuevo.telefono = telefono.trim();
+      usuario.telefono = telefono.trim();
+    }
+
+    let cambioPassword = false;
     if (newPassword) {
       if (!currentPassword) {
         return res.status(400).json({ message: 'Debes ingresar tu contraseña actual para cambiarla' });
@@ -204,15 +220,65 @@ export const updateProfile = async (req, res) => {
         return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
       }
       usuario.password = newPassword;
+      cambioPassword = true;
     }
 
     await usuario.save();
+
+    // Registrar auditoría si hubo cambios de datos de perfil
+    if (Object.keys(valorNuevo).length > 0 && usuario.productorId) {
+      await registrarAuditoria({
+        entidad: 'productor',
+        entidadId: usuario.productorId,
+        accion: 'editar',
+        descripcion: `Productor editó su perfil: ${usuario.nombre}`,
+        valorAnterior,
+        valorNuevo,
+        realizadoPor: usuario._id,
+        ip: req.ip
+      });
+    }
+
+    // Registrar auditoría si cambió contraseña
+    if (cambioPassword && usuario.productorId) {
+      await registrarAuditoria({
+        entidad: 'productor',
+        entidadId: usuario.productorId,
+        accion: 'cambiar_contraseña',
+        descripcion: `Productor cambió su contraseña`,
+        valorAnterior: {},
+        valorNuevo: {},
+        realizadoPor: usuario._id,
+        ip: req.ip
+      });
+    }
 
     const updatedUser = usuario.toJSON();
     res.json({ message: 'Perfil actualizado exitosamente', user: updatedUser });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
+  }
+};
+
+export const validateInvitationToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      return res.status(400).json({ valid: false, message: 'Token requerido' });
+    }
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const usuario = await Usuario.findOne({
+      invitationToken: hashedToken,
+      invitationExpires: { $gt: Date.now() }
+    });
+    if (!usuario) {
+      return res.status(400).json({ valid: false, message: 'El enlace de invitación es inválido o ya expiró. Solicitá un nuevo enlace al administrador.' });
+    }
+    res.json({ valid: true, email: usuario.email });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ valid: false, message });
   }
 };
 
@@ -246,6 +312,19 @@ export const setPasswordFromInvitation = async (req, res) => {
     usuario.activo = true;
 
     await usuario.save();
+
+    if (usuario.productorId) {
+      await registrarAuditoria({
+        entidad: 'productor',
+        entidadId: usuario.productorId,
+        accion: 'activar',
+        descripcion: `Productor activó su cuenta y configuró su contraseña (${usuario.email})`,
+        valorAnterior: { activo: false },
+        valorNuevo: { activo: true },
+        realizadoPor: usuario._id,
+        ip: req.ip
+      });
+    }
 
     // Generar token JWT para login automático
     const authToken = generateToken(usuario._id, usuario.rol);

@@ -1,29 +1,27 @@
 import mongoose from 'mongoose';
 
+const rangoKmSchema = new mongoose.Schema({
+  startKm: { type: Number, required: true, min: 0 },
+  endKm:   { type: Number, required: true, min: 0 },
+  precioPorTonelada: { type: Number, required: true, min: 0 },
+}, { _id: false });
+
 const tarifaSchema = new mongoose.Schema({
+  esConfiguracionGlobal: {
+    type: Boolean,
+    default: false,
+  },
+  rangosKm: {
+    type: [rangoKmSchema],
+    default: [],
+  },
   origen: {
-    ciudad: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    provincia: {
-      type: String,
-      required: true,
-      trim: true
-    }
+    ciudad: { type: String, trim: true },
+    provincia: { type: String, trim: true },
   },
   destino: {
-    ciudad: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    provincia: {
-      type: String,
-      required: true,
-      trim: true
-    }
+    ciudad: { type: String, trim: true },
+    provincia: { type: String, trim: true },
   },
   precioBase: {
     type: Number,
