@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, logout, getProfile, forgotPassword, resetPassword, setPasswordFromInvitation, updateProfile } from '../controllers/auth.controller.js';
+import { register, login, logout, getProfile, forgotPassword, resetPassword, setPasswordFromInvitation, updateProfile, validateInvitationToken } from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -10,6 +10,7 @@ router.post('/logout', logout);
 router.get('/profile', authenticate, getProfile);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
+router.get('/validate-invitation/:token', validateInvitationToken);
 router.post('/set-password', setPasswordFromInvitation);
 router.patch('/profile', authenticate, updateProfile);
 

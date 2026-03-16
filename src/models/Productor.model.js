@@ -48,14 +48,6 @@ const productorSchema = new mongoose.Schema({
     enum: ['Cereales', 'Oleaginosas', 'Ganadería', 'Mixto', 'Otro'],
     required: true
   },
-  activo: {
-    type: Boolean,
-    default: true
-  },
-  notas: {
-    type: String,
-    trim: true
-  }
 }, {
   timestamps: true
 });

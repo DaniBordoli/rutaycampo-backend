@@ -1,6 +1,25 @@
 ﻿import Viaje from '../models/Viaje.model.js';
+import Tarifa from '../models/Tarifa.model.js';
 import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
+
+const haversineKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const calcularPrecioTentativo = async (distanciaKm, peso) => {
+  const config = await Tarifa.findOne({ esConfiguracionGlobal: true });
+  if (!config || !config.rangosKm?.length) return null;
+  const rango = config.rangosKm.find(r => distanciaKm >= r.startKm && distanciaKm <= r.endKm);
+  if (!rango) return null;
+  return Math.round(rango.precioPorTonelada * peso);
+};
 
 
 export const createTrip = async (req, res) => {
@@ -33,10 +52,46 @@ export const createTrip = async (req, res) => {
       viajeData.productor = productorId;
     }
 
+    // Calcular precio tentativo desde coordenadas + rangos de tarifa
+    const origenCoord = viajeData.origen?.coordenadas;
+    const destinoCoord = viajeData.destino?.coordenadas;
+    if (
+      origenCoord?.latitud && origenCoord?.longitud &&
+      destinoCoord?.latitud && destinoCoord?.longitud &&
+      viajeData.peso
+    ) {
+      const distanciaKm = haversineKm(
+        origenCoord.latitud, origenCoord.longitud,
+        destinoCoord.latitud, destinoCoord.longitud
+      );
+      viajeData.distanciaKm = Math.round(distanciaKm);
+      const precioBase = await calcularPrecioTentativo(distanciaKm, viajeData.peso);
+      if (precioBase !== null) {
+        viajeData.precios = { ...(viajeData.precios || {}), precioBase };
+        viajeData.estado = 'cotizando';
+      }
+    }
+
     const viaje = await Viaje.create(viajeData);
     if (viaje.productor) {
       await viaje.populate('productor');
     }
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: 'crear',
+      entidad: 'viaje',
+      entidadId: viaje._id,
+      descripcion: `Viaje ${viaje.numeroViaje} creado desde ${viaje.origen?.ciudad} a ${viaje.destino?.ciudad}`,
+      valorNuevo: {
+        numeroViaje: viaje.numeroViaje,
+        origen: viaje.origen?.ciudad,
+        destino: viaje.destino?.ciudad,
+        peso: viaje.peso,
+        precioBase: viaje.precios?.precioBase ?? null,
+      },
+      ip: req.ip,
+    });
 
     res.status(201).json({
       message: 'Viaje creado exitosamente',
@@ -121,6 +176,54 @@ export const updateTrip = async (req, res) => {
   }
 };
 
+export const confirmarTarifa = async (req, res) => {
+  try {
+    const { precioSistema, precioProductor, precioFinal, pagoChofer, notas } = req.body;
+
+    if (!precioFinal || !pagoChofer) {
+      return res.status(400).json({ message: 'precioFinal y pagoChofer son requeridos' });
+    }
+
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const anterior = {
+      precios: { ...viaje.precios?.toObject?.() ?? viaje.precios },
+      estado: viaje.estado,
+    };
+
+    if (!viaje.precios) viaje.precios = {};
+    if (precioSistema) viaje.precios.precioBase = precioSistema;
+    if (precioProductor) viaje.precios.precioPropuesto = precioProductor;
+    viaje.precios.precioConfirmado = precioFinal;
+    viaje.precios.precioFinal = precioFinal;
+    viaje.pagoChofer = pagoChofer;
+    if (notas) viaje.notas = notas;
+    if (viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
+      viaje.estado = 'confirmado';
+    }
+
+    await viaje.save();
+    await viaje.populate('productor transportista');
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: 'editar',
+      entidad: 'viaje',
+      entidadId: viaje._id,
+      descripcion: `Tarifa confirmada para viaje ${viaje.numeroViaje}: $${precioFinal}`,
+      valorAnterior: anterior,
+      valorNuevo: { precios: viaje.precios, pagoChofer, estado: viaje.estado },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Tarifa confirmada exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const updateTripStatus = async (req, res) => {
   try {
     const { status, notes } = req.body;
@@ -171,7 +274,9 @@ export const proposePrice = async (req, res) => {
       return res.status(403).json({ message: 'No tienes permiso para proponer precio en este viaje' });
     }
 
-    viaje.precioPropuesto = price;
+    if (!viaje.precios) viaje.precios = {};
+    viaje.precios.precioPropuesto = price;
+    if (viaje.estado === 'solicitado') viaje.estado = 'cotizando';
     await viaje.save();
 
     res.json({

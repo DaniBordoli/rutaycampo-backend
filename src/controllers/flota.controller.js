@@ -1,6 +1,7 @@
 ﻿import Flota from '../models/Flota.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 
 export const createFlota = async (req, res) => {
@@ -37,7 +38,7 @@ export const createFlota = async (req, res) => {
 
 export const getFlotas = async (req, res) => {
   try {
-    const { activa, prioridad, search } = req.query;
+    const { activa, prioridad, search, transportistaId } = req.query;
     const filter = {};
 
     if (activa !== undefined) {
@@ -46,6 +47,10 @@ export const getFlotas = async (req, res) => {
 
     if (prioridad) {
       filter.prioridad = prioridad;
+    }
+
+    if (transportistaId) {
+      filter.transportistas = transportistaId;
     }
 
     if (search) {
@@ -96,6 +101,8 @@ export const updateFlota = async (req, res) => {
       return res.status(404).json({ message: 'Flota no encontrada' });
     }
 
+    const anterior = flota.toObject();
+
     if (cuit && cuit.trim() !== flota.cuit) {
       const cuitExists = await Flota.findOne({
         cuit: cuit.trim(),
@@ -117,6 +124,29 @@ export const updateFlota = async (req, res) => {
 
     await flota.save();
     await flota.populate('transportistas', 'razonSocial nombre cuit');
+
+    const camposAuditables = ['nombre', 'cuit', 'responsable', 'telefono', 'email', 'prioridad', 'activa', 'notas'];
+    const valorAnterior = {};
+    const valorNuevo = {};
+    camposAuditables.forEach(campo => {
+      if (JSON.stringify(anterior[campo]) !== JSON.stringify(flota[campo])) {
+        valorAnterior[campo] = anterior[campo];
+        valorNuevo[campo] = flota[campo];
+      }
+    });
+
+    if (Object.keys(valorNuevo).length > 0) {
+      await registrarAuditoria({
+        entidad: 'flota',
+        entidadId: flota._id,
+        accion: 'editar',
+        descripcion: `Chofer editado: ${flota.nombre}`,
+        valorAnterior,
+        valorNuevo,
+        realizadoPor: req.user._id,
+        ip: req.ip
+      });
+    }
 
     res.json({
       message: 'Flota actualizada exitosamente',
@@ -151,8 +181,20 @@ export const toggleActivaFlota = async (req, res) => {
       return res.status(404).json({ message: 'Flota no encontrada' });
     }
 
+    const activaAnterior = flota.activa;
     flota.activa = !flota.activa;
     await flota.save();
+
+    await registrarAuditoria({
+      entidad: 'flota',
+      entidadId: flota._id,
+      accion: flota.activa ? 'activar' : 'desactivar',
+      descripcion: `Chofer ${flota.activa ? 'activado' : 'desactivado'}: ${flota.nombre}`,
+      valorAnterior: { activa: activaAnterior },
+      valorNuevo: { activa: flota.activa },
+      realizadoPor: req.user._id,
+      ip: req.ip
+    });
 
     res.json({
       message: `Flota ${flota.activa ? 'activada' : 'desactivada'} exitosamente`,

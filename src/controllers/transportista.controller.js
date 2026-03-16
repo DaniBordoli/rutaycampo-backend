@@ -1,6 +1,7 @@
 ﻿import Transportista from '../models/Transportista.model.js';
 import Camion from '../models/Camion.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
 
 
 export const createTransportista = async (req, res) => {
@@ -68,14 +69,40 @@ export const getTransportistaById = async (req, res) => {
 
 export const updateTransportista = async (req, res) => {
   try {
+    const anterior = await Transportista.findById(req.params.id);
+    if (!anterior) {
+      return res.status(404).json({ message: 'Transportista no encontrado' });
+    }
+
     const transportista = await Transportista.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true, runValidators: true }
     );
-    if (!transportista) {
-      return res.status(404).json({ message: 'Transportista no encontrado' });
+
+    const camposAuditables = ['razonSocial', 'cuit', 'nombre', 'numeroWhatsapp', 'email', 'notas'];
+    const valorAnterior = {};
+    const valorNuevo = {};
+    camposAuditables.forEach(campo => {
+      if (JSON.stringify(anterior[campo]) !== JSON.stringify(transportista[campo])) {
+        valorAnterior[campo] = anterior[campo];
+        valorNuevo[campo] = transportista[campo];
+      }
+    });
+
+    if (Object.keys(valorNuevo).length > 0) {
+      await registrarAuditoria({
+        entidad: 'transportista',
+        entidadId: transportista._id,
+        accion: 'editar',
+        descripcion: `Transportista editado: ${transportista.razonSocial}`,
+        valorAnterior,
+        valorNuevo,
+        realizadoPor: req.user._id,
+        ip: req.ip
+      });
     }
+
     res.json({
       message: 'Transportista actualizado exitosamente',
       transportista
@@ -132,6 +159,19 @@ export const deactivateTransportista = async (req, res) => {
     transportista.desactivadoHasta = desactivadoHasta || null;
     await transportista.save();
 
+    await registrarAuditoria({
+      entidad: 'transportista',
+      entidadId: transportista._id,
+      accion: 'desactivar',
+      descripcion: desactivadoHasta
+        ? `Transportista desactivado hasta ${new Date(desactivadoHasta).toLocaleDateString('es-AR')}: ${transportista.razonSocial}`
+        : `Transportista desactivado indefinidamente: ${transportista.razonSocial}`,
+      valorAnterior: { activo: true },
+      valorNuevo: { activo: false, desactivadoHasta: desactivadoHasta || null },
+      realizadoPor: req.user._id,
+      ip: req.ip
+    });
+
     const message = desactivadoHasta 
       ? `Transportista desactivado hasta ${new Date(desactivadoHasta).toLocaleDateString('es-AR')}`
       : 'Transportista desactivado indefinidamente';
@@ -157,6 +197,17 @@ export const activateTransportista = async (req, res) => {
     transportista.activo = true;
     transportista.desactivadoHasta = null;
     await transportista.save();
+
+    await registrarAuditoria({
+      entidad: 'transportista',
+      entidadId: transportista._id,
+      accion: 'activar',
+      descripcion: `Transportista activado: ${transportista.razonSocial}`,
+      valorAnterior: { activo: false },
+      valorNuevo: { activo: true },
+      realizadoPor: req.user._id,
+      ip: req.ip
+    });
 
     res.json({
       message: 'Transportista activado exitosamente',
