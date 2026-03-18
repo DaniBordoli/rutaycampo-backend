@@ -37,7 +37,7 @@ export const createProducer = async (req, res) => {
     // Crear usuario con token de invitación
     const invitationToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(invitationToken).digest('hex');
-    const contactName = [productorData.nombreContacto, productorData.apellidoContacto].filter(Boolean).join(' ') || productorData.razonSocial;
+    const contactName = productorData.nombreContacto || productorData.razonSocial;
 
     let invitationSent = false;
     try {
