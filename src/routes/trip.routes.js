@@ -13,7 +13,10 @@ import {
   updateLocation,
   proposePrice,
   confirmarTarifa,
-  deleteTrip
+  deleteTrip,
+  updateTruckDriver,
+  updateTruckVehicle,
+  updateTruckStatus
 } from '../controllers/trip.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -32,6 +35,9 @@ router.patch('/:id/confirmar-tarifa', authorize('superadmin', 'operador'), confi
 router.post('/:id/assign', authorize('superadmin', 'operador'), assignTransportista);
 router.post('/:id/camiones', authorize('superadmin', 'operador'), assignCamion);
 router.delete('/:id/camiones/:camionId', authorize('superadmin', 'operador'), removeCamion);
+router.patch('/:id/camiones/:truckId/transportista', authorize('superadmin', 'operador'), updateTruckDriver);
+router.patch('/:id/camiones/:truckId/camion', authorize('superadmin', 'operador'), updateTruckVehicle);
+router.patch('/:id/camiones/:truckId/status', authorize('superadmin', 'operador'), updateTruckStatus);
 router.post('/:id/camiones/:camionId/checkin', authorize('transportista', 'superadmin', 'operador'), checkinCamion);
 router.post('/:id/checkin', authorize('transportista', 'superadmin', 'operador'), addCheckIn);
 router.patch('/:id/location', authorize('transportista'), updateLocation);
