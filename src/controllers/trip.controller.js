@@ -1,6 +1,25 @@
 ﻿import Viaje from '../models/Viaje.model.js';
+import Tarifa from '../models/Tarifa.model.js';
 import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import { registrarAuditoria } from '../utils/auditoria.js';
+
+const haversineKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const calcularPrecioTentativo = async (distanciaKm, peso) => {
+  const config = await Tarifa.findOne({ esConfiguracionGlobal: true });
+  if (!config || !config.rangosKm?.length) return null;
+  const rango = config.rangosKm.find(r => distanciaKm >= r.startKm && distanciaKm <= r.endKm);
+  if (!rango) return null;
+  return Math.round(rango.precioPorTonelada * peso);
+};
 
 
 export const createTrip = async (req, res) => {
@@ -33,10 +52,40 @@ export const createTrip = async (req, res) => {
       viajeData.productor = productorId;
     }
 
+    // Calcular distanciaKm desde coordenadas si no viene provista
+    const origenCoord = viajeData.origen?.coordenadas;
+    const destinoCoord = viajeData.destino?.coordenadas;
+    if (
+      !viajeData.distanciaKm &&
+      origenCoord?.latitud && origenCoord?.longitud &&
+      destinoCoord?.latitud && destinoCoord?.longitud
+    ) {
+      viajeData.distanciaKm = Math.round(haversineKm(
+        origenCoord.latitud, origenCoord.longitud,
+        destinoCoord.latitud, destinoCoord.longitud
+      ));
+    }
+
     const viaje = await Viaje.create(viajeData);
     if (viaje.productor) {
       await viaje.populate('productor');
     }
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: 'crear',
+      entidad: 'viaje',
+      entidadId: viaje._id,
+      descripcion: `Viaje ${viaje.numeroViaje} creado desde ${viaje.origen?.ciudad} a ${viaje.destino?.ciudad}`,
+      valorNuevo: {
+        numeroViaje: viaje.numeroViaje,
+        origen: viaje.origen?.ciudad,
+        destino: viaje.destino?.ciudad,
+        peso: viaje.peso,
+        precioBase: viaje.precios?.precioBase ?? null,
+      },
+      ip: req.ip,
+    });
 
     res.status(201).json({
       message: 'Viaje creado exitosamente',
@@ -121,6 +170,57 @@ export const updateTrip = async (req, res) => {
   }
 };
 
+export const confirmarTarifa = async (req, res) => {
+  try {
+    const { precioSistema, precioProductor, precioFinal, pagoChofer, notas } = req.body;
+
+    if (!precioFinal || !pagoChofer) {
+      return res.status(400).json({ message: 'precioFinal y pagoChofer son requeridos' });
+    }
+
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const anterior = {
+      precios: { ...viaje.precios?.toObject?.() ?? viaje.precios },
+      estado: viaje.estado,
+    };
+
+    if (!viaje.precios) viaje.precios = {};
+    if (precioSistema) {
+      viaje.precios.precioBase = precioSistema;
+      viaje.precios.tarifaKmTn = precioSistema;
+    }
+    if (precioProductor) viaje.precios.precioPropuesto = precioProductor;
+    viaje.precios.precioConfirmado = precioFinal;
+    viaje.precios.precioFinal = precioFinal;
+    viaje.pagoChofer = pagoChofer;
+    if (notas) viaje.notas = notas;
+    if (viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
+      viaje.estado = 'buscando_camiones';
+    }
+
+    await viaje.save();
+    await viaje.populate('productor transportista');
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: 'editar',
+      entidad: 'viaje',
+      entidadId: viaje._id,
+      descripcion: `Tarifa confirmada para viaje ${viaje.numeroViaje}: $${precioFinal}`,
+      valorAnterior: anterior,
+      valorNuevo: { precios: viaje.precios, pagoChofer, estado: viaje.estado },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Tarifa confirmada exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const updateTripStatus = async (req, res) => {
   try {
     const { status, notes } = req.body;
@@ -171,7 +271,8 @@ export const proposePrice = async (req, res) => {
       return res.status(403).json({ message: 'No tienes permiso para proponer precio en este viaje' });
     }
 
-    viaje.precioPropuesto = price;
+    if (!viaje.precios) viaje.precios = {};
+    viaje.precios.precioPropuesto = price;
     await viaje.save();
 
     res.json({
@@ -209,7 +310,7 @@ export const assignTransportista = async (req, res) => {
     }
 
     viaje.transportista = transportistaId;
-    viaje.estado = 'en_curso';
+    viaje.estado = 'confirmado';
 
     await viaje.save();
     await viaje.populate('productor transportista');
@@ -263,6 +364,116 @@ export const addCheckIn = async (req, res) => {
       message: 'Check-in registrado exitosamente',
       trip: viaje
     });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const assignCamion = async (req, res) => {
+  try {
+    const { camionId, transportistaId } = req.body;
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const existente = viaje.camionesAsignados.find(
+      c => c.camion?.toString() === camionId
+    );
+    if (existente) {
+      return res.status(409).json({ message: 'Este camión ya está asignado al viaje' });
+    }
+
+    viaje.camionesAsignados.push({
+      camion: camionId,
+      transportista: transportistaId,
+      subEstado: 'asignado'
+    });
+
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    await registrarAuditoria({
+      realizadoPor: req.user._id,
+      accion: 'editar',
+      entidad: 'viaje',
+      entidadId: viaje._id,
+      descripcion: `Camión asignado al viaje ${viaje.numeroViaje}`,
+      valorNuevo: { camionId, transportistaId },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Camión asignado exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const removeCamion = async (req, res) => {
+  try {
+    const { camionId } = req.params;
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const idx = viaje.camionesAsignados.findIndex(
+      c => c._id.toString() === camionId || c.camion?.toString() === camionId
+    );
+    if (idx === -1) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    viaje.camionesAsignados.splice(idx, 1);
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    res.json({ message: 'Camión removido exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const checkinCamion = async (req, res) => {
+  try {
+    const { camionId } = req.params;
+    const { tipo, ubicacion, notas } = req.body;
+
+    const SUBESTADO_MAP = {
+      en_origen:  'en_origen',
+      cargado:    'cargado',
+      iniciado:   'iniciado',
+      en_destino: 'en_destino',
+      finalizado: 'finalizado'
+    };
+
+    if (!SUBESTADO_MAP[tipo]) {
+      return res.status(400).json({ message: 'Tipo de check-in inválido' });
+    }
+
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const camionAsignado = viaje.camionesAsignados.find(
+      c => c._id.toString() === camionId || c.camion?.toString() === camionId
+    );
+    if (!camionAsignado) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    camionAsignado.checkIns.push({ tipo, ubicacion, notas });
+    camionAsignado.subEstado = SUBESTADO_MAP[tipo];
+
+    if (tipo === 'iniciado' && viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
+      viaje.estado = 'en_curso';
+    }
+
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    io.to(`trip-${viaje._id}`).emit('camion-checkin', {
+      tripId: viaje._id,
+      camionId,
+      tipo,
+      timestamp: new Date()
+    });
+
+    res.json({ message: 'Check-in registrado', trip: viaje });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });

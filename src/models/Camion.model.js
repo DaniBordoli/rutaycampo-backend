@@ -63,10 +63,21 @@ const camionSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  escalable: {
+    type: Boolean,
+    default: false
+  },
   disponible: {
     type: Boolean,
     default: true
   },
+  documentos: [{
+    url: { type: String, required: true },
+    nombre: { type: String },
+    tipo: { type: String },
+    publicId: { type: String },
+    subidoEn: { type: Date, default: Date.now }
+  }],
   notas: {
     type: String,
     trim: true
@@ -78,5 +89,6 @@ const camionSchema = new mongoose.Schema({
 camionSchema.index({ transportista: 1 });
 camionSchema.index({ patente: 1 });
 camionSchema.index({ disponible: 1, activo: 1 });
+camionSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Camion', camionSchema);

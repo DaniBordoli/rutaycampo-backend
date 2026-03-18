@@ -1,5 +1,31 @@
 import mongoose from 'mongoose';
 
+const camionAsignadoSchema = new mongoose.Schema({
+  camion: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Camion'
+  },
+  transportista: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Transportista'
+  },
+  subEstado: {
+    type: String,
+    enum: ['pendiente', 'asignado', 'en_origen', 'cargado', 'iniciado', 'en_destino', 'finalizado'],
+    default: 'pendiente'
+  },
+  checkIns: [{
+    tipo: {
+      type: String,
+      enum: ['en_origen', 'cargado', 'iniciado', 'en_destino', 'finalizado'],
+      required: true
+    },
+    fechaHora: { type: Date, default: Date.now },
+    ubicacion: { latitud: Number, longitud: Number },
+    notas: String
+  }]
+});
+
 const checkInSchema = new mongoose.Schema({
   tipo: {
     type: String,
@@ -74,6 +100,14 @@ const viajeSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  camionesComunes: {
+    type: Number,
+    default: 0
+  },
+  camionesEscalables: {
+    type: Number,
+    default: 0
+  },
   cartaDePorte: {
     nombreArchivo: String,
     ruta: String,
@@ -87,16 +121,21 @@ const viajeSchema = new mongoose.Schema({
   notas: String,
   estado: {
     type: String,
-    enum: ['solicitado', 'cotizando', 'confirmado', 'en_asignacion', 'en_curso', 'finalizado'],
+    enum: ['solicitado', 'buscando_camiones', 'confirmado', 'en_curso', 'finalizado'],
     default: 'solicitado'
   },
-  subEstado: {
-    type: String,
-    enum: ['llegue_a_cargar', 'cargado_saliendo', 'en_camino', 'llegue_a_destino', 'descargado'],
+  camionesAsignados: [camionAsignadoSchema],
+  distanciaKm: {
+    type: Number,
+    default: null
+  },
+  pagoChofer: {
+    type: Number,
     default: null
   },
   precios: {
     precioBase: Number,
+    tarifaKmTn: Number,
     precioPropuesto: Number,
     precioConfirmado: Number,
     precioFinal: Number
@@ -106,6 +145,7 @@ const viajeSchema = new mongoose.Schema({
     ref: 'Transportista'
   },
   checkIns: [checkInSchema],
+  // Legacy — kept for backwards compatibility
   ubicacionActual: {
     latitud: Number,
     longitud: Number,

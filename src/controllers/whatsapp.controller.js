@@ -55,7 +55,7 @@ export const sendOfferToCarriers = async (req, res) => {
       }
     }
 
-    viaje.estado = 'en_asignacion';
+    viaje.estado = 'buscando_camiones';
     await viaje.save();
 
     res.json({ 

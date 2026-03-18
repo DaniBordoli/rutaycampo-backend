@@ -2,28 +2,31 @@ import nodemailer from 'nodemailer';
 
 class EmailService {
   constructor() {
-    // En desarrollo, si no hay EMAIL_PASSWORD configurado, usar Ethereal para testing
-    if (process.env.NODE_ENV === 'development' && process.env.EMAIL_PASSWORD === 'tu-app-password') {
+    this.transporter = null;
+  }
+
+  getTransporter() {
+    if (['development', 'staging'].includes(process.env.NODE_ENV) && (!process.env.EMAIL_PASSWORD || process.env.EMAIL_PASSWORD === 'tu-app-password')) {
       console.log('⚠️  EMAIL_PASSWORD no configurado. Los emails no se enviarán.');
       console.log('💡 Para testing, el invitationUrl se mostrará en la respuesta del API.');
-      this.transporter = null;
-    } else {
-      this.transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: process.env.EMAIL_PORT || 587,
-        secure: false,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD
-        }
-      });
+      return null;
     }
+    return nodemailer.createTransport({
+      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.EMAIL_PORT) || 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      }
+    });
   }
 
   async sendPasswordResetEmail(email, resetToken, userName) {
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    
-    if (!this.transporter) {
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
       console.log(`📧 [MOCK] Email de recuperación para ${email}`);
       console.log(`🔗 Reset URL: ${resetUrl}`);
       return { success: true, mock: true };
@@ -37,7 +40,7 @@ class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      await transporter.sendMail(mailOptions);
       return { success: true };
     } catch (error) {
       console.error('Error al enviar email:', error);
@@ -47,8 +50,9 @@ class EmailService {
 
   async sendProducerInvitationEmail(email, invitationToken, producerName) {
     const invitationUrl = `${process.env.FRONTEND_PRODUCTORES_URL || 'http://localhost:5173'}/set-password/${invitationToken}`;
-    
-    if (!this.transporter) {
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
       console.log(`📧 [MOCK] Email de invitación para ${email} (${producerName})`);
       console.log(`🔗 Invitation URL: ${invitationUrl}`);
       return { success: true, mock: true };
@@ -62,7 +66,7 @@ class EmailService {
     };
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
+      const info = await transporter.sendMail(mailOptions);
       console.log(`✅ Email de invitación enviado a ${email}`);
       console.log(`📧 Message ID: ${info.messageId}`);
       return { success: true };
