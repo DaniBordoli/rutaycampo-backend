@@ -25,7 +25,7 @@ const productorSchema = new mongoose.Schema({
   },
   apellidoContacto: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
   emailContacto: {
