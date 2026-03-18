@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "set:dev": "node -e \"require('fs').copyFileSync('.env.staging', '.env'); console.log('✅ .env <- .env.staging')\"",
-    "set:prod": "node -e \"require('fs').copyFileSync('.env.production', '.env'); console.log('✅ .env <- .env.production')\"",
+    "set:dev": "node --input-type=module -e \"import { copyFileSync } from 'fs'; copyFileSync('env.staging', '.env'); console.log('✅ .env <- env.staging')\"",
+    "set:prod": "node --input-type=module -e \"import { copyFileSync } from 'fs'; copyFileSync('.env.production', '.env'); console.log('✅ .env <- .env.production')\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
