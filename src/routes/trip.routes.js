@@ -6,6 +6,9 @@ import {
   updateTrip,
   updateTripStatus,
   assignTransportista,
+  assignCamion,
+  removeCamion,
+  checkinCamion,
   addCheckIn,
   updateLocation,
   proposePrice,
@@ -27,6 +30,9 @@ router.patch('/:id/status', authorize('superadmin', 'operador'), updateTripStatu
 router.patch('/:id/propose-price', authorize('productor', 'superadmin', 'operador'), proposePrice);
 router.patch('/:id/confirmar-tarifa', authorize('superadmin', 'operador'), confirmarTarifa);
 router.post('/:id/assign', authorize('superadmin', 'operador'), assignTransportista);
+router.post('/:id/camiones', authorize('superadmin', 'operador'), assignCamion);
+router.delete('/:id/camiones/:camionId', authorize('superadmin', 'operador'), removeCamion);
+router.post('/:id/camiones/:camionId/checkin', authorize('transportista', 'superadmin', 'operador'), checkinCamion);
 router.post('/:id/checkin', authorize('transportista', 'superadmin', 'operador'), addCheckIn);
 router.patch('/:id/location', authorize('transportista'), updateLocation);
 router.delete('/:id', authorize('superadmin', 'operador'), deleteTrip);
