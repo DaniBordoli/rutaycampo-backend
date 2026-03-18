@@ -7,7 +7,8 @@ import {
   deleteTransportista,
   toggleAvailability,
   deactivateTransportista,
-  activateTransportista
+  activateTransportista,
+  getChoferesIndependientes
 } from '../controllers/transportista.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
@@ -16,6 +17,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.post('/', authorize(['superadmin', 'operador']), createTransportista);
+router.get('/choferes-independientes', getChoferesIndependientes);
 router.get('/', getTransportistas);
 router.get('/:id', getTransportistaById);
 router.put('/:id', authorize(['superadmin', 'operador']), updateTransportista);

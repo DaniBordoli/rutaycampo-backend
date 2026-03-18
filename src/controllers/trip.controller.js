@@ -431,6 +431,72 @@ export const removeCamion = async (req, res) => {
   }
 };
 
+export const updateTruckDriver = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { transportistaId } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.transportista = transportistaId;
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    res.json({ message: 'Chofer actualizado exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckVehicle = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { camionId } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.camion = camionId;
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    res.json({ message: 'Camión actualizado exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckStatus = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { subEstado } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.subEstado = subEstado;
+    await viaje.save();
+    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+
+    res.json({ message: 'Estado actualizado exitosamente', trip: viaje });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const checkinCamion = async (req, res) => {
   try {
     const { camionId } = req.params;
