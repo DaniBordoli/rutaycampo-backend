@@ -135,7 +135,9 @@ export const getTripById = async (req, res) => {
   try {
     const viaje = await Viaje.findById(req.params.id)
       .populate('productor')
-      .populate('transportista');
+      .populate('transportista')
+      .populate('camionesAsignados.camion')
+      .populate('camionesAsignados.transportista');
 
     if (!viaje) {
       return res.status(404).json({ message: 'Viaje no encontrado' });

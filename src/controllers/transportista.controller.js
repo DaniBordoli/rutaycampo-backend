@@ -1,6 +1,6 @@
 ﻿import Transportista from '../models/Transportista.model.js';
 import Camion from '../models/Camion.model.js';
-import Flota from '../models/Flota.model.js';
+import Chofer from '../models/Chofer.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 
@@ -222,8 +222,8 @@ export const activateTransportista = async (req, res) => {
 
 export const getChoferesIndependientes = async (req, res) => {
   try {
-    // Buscar choferes (Flota) que no tienen transportistas asociados
-    const choferes = await Flota.find({
+    // Buscar choferes independientes que no tienen transportistas asociados
+    const choferes = await Chofer.find({
       $or: [
         { transportistas: { $exists: false } },
         { transportistas: { $size: 0 } }
