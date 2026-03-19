@@ -4,7 +4,7 @@ const auditoriaSchema = new mongoose.Schema({
   entidad: {
     type: String,
     required: true,
-    enum: ['productor', 'transportista', 'flota', 'camion', 'viaje', 'usuario', 'tarifa']
+    enum: ['productor', 'transportista', 'chofer', 'camion', 'viaje', 'usuario', 'tarifa']
   },
   entidadId: {
     type: mongoose.Schema.Types.ObjectId,

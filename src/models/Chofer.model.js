@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const flotaSchema = new mongoose.Schema({
+const choferSchema = new mongoose.Schema({
   nombre: {
     type: String,
     required: true,
@@ -48,9 +48,9 @@ const flotaSchema = new mongoose.Schema({
   timestamps: true
 });
 
-flotaSchema.index({ nombre: 1 });
-flotaSchema.index({ cuit: 1 });
-flotaSchema.index({ activa: 1 });
-flotaSchema.index({ prioridad: 1 });
+choferSchema.index({ nombre: 1 });
+choferSchema.index({ cuit: 1 });
+choferSchema.index({ activa: 1 });
+choferSchema.index({ prioridad: 1 });
 
-export default mongoose.model('Flota', flotaSchema);
+export default mongoose.model('Chofer', choferSchema);
