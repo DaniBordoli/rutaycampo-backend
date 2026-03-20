@@ -40,6 +40,16 @@ const choferSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Transportista'
   }],
+  licenciaVencimiento: {
+    type: Date
+  },
+  documentos: [{
+    name: { type: String },
+    url: { type: String },
+    size: { type: Number },
+    publicId: { type: String },
+    uploadedAt: { type: Date, default: Date.now }
+  }],
   notas: {
     type: String,
     trim: true

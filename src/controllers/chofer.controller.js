@@ -2,11 +2,12 @@ import Chofer from '../models/Chofer.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+import { uploadDocumentosChofer, cloudinary } from '../services/cloudinary.service.js';
 
 
 export const createChofer = async (req, res) => {
   try {
-    const { nombre, cuit, responsable, telefono, email, prioridad, notas } = req.body;
+    const { nombre, cuit, responsable, telefono, email, prioridad, notas, licenciaVencimiento, documentos } = req.body;
 
     const cuitExists = await Chofer.findOne({ cuit: cuit.trim() });
     if (cuitExists) {
@@ -20,7 +21,9 @@ export const createChofer = async (req, res) => {
       telefono,
       email,
       prioridad,
-      notas
+      notas,
+      licenciaVencimiento,
+      documentos
     });
 
     await chofer.save();
@@ -94,7 +97,7 @@ export const getChoferById = async (req, res) => {
 
 export const updateChofer = async (req, res) => {
   try {
-    const { nombre, cuit, responsable, telefono, email, prioridad, activa, notas } = req.body;
+    const { nombre, cuit, responsable, telefono, email, prioridad, activa, notas, licenciaVencimiento, documentos, transportistas } = req.body;
 
     const chofer = await Chofer.findById(req.params.id);
     if (!chofer) {
@@ -121,6 +124,9 @@ export const updateChofer = async (req, res) => {
     if (prioridad !== undefined) chofer.prioridad = prioridad;
     if (activa !== undefined) chofer.activa = activa;
     if (notas !== undefined) chofer.notas = notas;
+    if (licenciaVencimiento !== undefined) chofer.licenciaVencimiento = licenciaVencimiento;
+    if (documentos !== undefined) chofer.documentos = documentos;
+    if (transportistas !== undefined) chofer.transportistas = transportistas;
 
     await chofer.save();
     await chofer.populate('transportistas', 'razonSocial nombre cuit');
@@ -263,6 +269,64 @@ export const removeTransportistaFromChofer = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al remover transportista de chofer:', error);
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const uploadDocumentosHandler = (req, res) => {
+  uploadDocumentosChofer(req, res, async (err) => {
+    if (err) {
+      console.error('Error en uploadDocumentosChofer:', err);
+      return res.status(400).json({ message: err.message || 'Error al subir archivos' });
+    }
+
+    try {
+      const chofer = await Chofer.findById(req.params.id);
+      if (!chofer) return res.status(404).json({ message: 'Chofer no encontrado' });
+      if (!req.files || req.files.length === 0) return res.status(400).json({ message: 'No se recibieron archivos' });
+
+      const nuevosDocumentos = req.files.map(file => ({
+        name: file.originalname,
+        url: file.path,
+        size: file.size,
+        publicId: file.filename,
+        uploadedAt: new Date(),
+      }));
+
+      chofer.documentos.push(...nuevosDocumentos);
+      await chofer.save();
+
+      res.json({ message: `${req.files.length} archivo(s) subido(s) exitosamente`, documentos: chofer.documentos });
+    } catch (error) {
+      console.error('Error al guardar documentos del chofer:', error);
+      const { status, message } = sanitizeError(error);
+      res.status(status).json({ message });
+    }
+  });
+};
+
+export const deleteDocumentoChofer = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+
+    const chofer = await Chofer.findById(id);
+    if (!chofer) return res.status(404).json({ message: 'Chofer no encontrado' });
+
+    const doc = chofer.documentos.id(docId);
+    if (!doc) return res.status(404).json({ message: 'Documento no encontrado' });
+
+    if (doc.publicId) {
+      const resourceType = doc.url?.includes('/raw/') ? 'raw' : 'image';
+      await cloudinary.uploader.destroy(doc.publicId, { resource_type: resourceType });
+    }
+
+    chofer.documentos.pull(docId);
+    await chofer.save();
+
+    res.json({ message: 'Documento eliminado exitosamente', documentos: chofer.documentos });
+  } catch (error) {
+    console.error('Error al eliminar documento del chofer:', error);
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
   }
