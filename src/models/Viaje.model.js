@@ -121,7 +121,7 @@ const viajeSchema = new mongoose.Schema({
   notas: String,
   estado: {
     type: String,
-    enum: ['solicitado', 'buscando_camiones', 'confirmado', 'en_curso', 'finalizado'],
+    enum: ['solicitado', 'buscando_camiones', 'documentacion', 'confirmado', 'en_curso', 'finalizado'],
     default: 'solicitado'
   },
   camionesAsignados: [camionAsignadoSchema],
