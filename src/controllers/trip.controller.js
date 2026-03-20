@@ -1,8 +1,23 @@
 ﻿import Viaje from '../models/Viaje.model.js';
 import Tarifa from '../models/Tarifa.model.js';
+import Chofer from '../models/Chofer.model.js';
 import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+
+const populateViajeConChoferes = async (viaje) => {
+  await viaje.populate('productor transportista camionesAsignados.camion');
+  for (const truck of viaje.camionesAsignados) {
+    if (!truck.transportista) continue;
+    const rawId = truck.transportista._id || truck.transportista;
+    if (truck.transportista._id) continue;
+    const chofer = await Chofer.findById(rawId).lean();
+    if (chofer) {
+      truck.transportista = { _id: chofer._id, nombre: chofer.nombre, esChoferIndependiente: true };
+    }
+  }
+  return viaje;
+};
 
 const haversineKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
@@ -124,6 +139,16 @@ export const getTrips = async (req, res) => {
       .populate('transportista')
       .sort({ createdAt: -1 });
 
+    const sinNumero = viajes.filter(v => !v.numeroViaje);
+    if (sinNumero.length > 0) {
+      const totalDocs = await Viaje.countDocuments();
+      const savePromises = sinNumero.map(async (v, idx) => {
+        v.numeroViaje = `VJ-${String(totalDocs - idx).padStart(6, '0')}`;
+        return v.save();
+      });
+      await Promise.all(savePromises);
+    }
+
     res.json({ trips: viajes });
   } catch (error) {
     const { status, message } = sanitizeError(error);
@@ -133,16 +158,13 @@ export const getTrips = async (req, res) => {
 
 export const getTripById = async (req, res) => {
   try {
-    const viaje = await Viaje.findById(req.params.id)
-      .populate('productor')
-      .populate('transportista')
-      .populate('camionesAsignados.camion')
-      .populate('camionesAsignados.transportista');
+    const viaje = await Viaje.findById(req.params.id);
 
     if (!viaje) {
       return res.status(404).json({ message: 'Viaje no encontrado' });
     }
 
+    await populateViajeConChoferes(viaje);
     res.json({ trip: viaje });
   } catch (error) {
     const { status, message } = sanitizeError(error);
@@ -392,7 +414,7 @@ export const assignCamion = async (req, res) => {
     });
 
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     await registrarAuditoria({
       realizadoPor: req.user._id,
@@ -424,7 +446,7 @@ export const removeCamion = async (req, res) => {
 
     viaje.camionesAsignados.splice(idx, 1);
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     res.json({ message: 'Camión removido exitosamente', trip: viaje });
   } catch (error) {
@@ -446,7 +468,7 @@ export const updateTruckDriver = async (req, res) => {
 
     truck.transportista = transportistaId;
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     res.json({ message: 'Chofer actualizado exitosamente', trip: viaje });
   } catch (error) {
@@ -468,7 +490,7 @@ export const updateTruckVehicle = async (req, res) => {
 
     truck.camion = camionId;
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     res.json({ message: 'Camión actualizado exitosamente', trip: viaje });
   } catch (error) {
@@ -490,7 +512,7 @@ export const updateTruckStatus = async (req, res) => {
 
     truck.subEstado = subEstado;
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     res.json({ message: 'Estado actualizado exitosamente', trip: viaje });
   } catch (error) {
@@ -532,7 +554,7 @@ export const checkinCamion = async (req, res) => {
     }
 
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    await populateViajeConChoferes(viaje);
 
     io.to(`trip-${viaje._id}`).emit('camion-checkin', {
       tripId: viaje._id,
