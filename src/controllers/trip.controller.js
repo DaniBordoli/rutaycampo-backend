@@ -1,8 +1,67 @@
 ﻿import Viaje from '../models/Viaje.model.js';
 import Tarifa from '../models/Tarifa.model.js';
+import Chofer from '../models/Chofer.model.js';
+import Transportista from '../models/Transportista.model.js';
 import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+
+const checkYTransicionarDocumentacion = (viaje) => {
+  if (viaje.estado !== 'buscando_camiones') return;
+  const totalSlots = viaje.camionesSolicitados || 0;
+  if (totalSlots === 0) return;
+  const asignados = viaje.camionesAsignados.filter(
+    c => c.camion && c.transportista
+  ).length;
+  if (asignados >= totalSlots) {
+    viaje.estado = 'documentacion';
+  }
+};
+
+export const checkYTransicionarConfirmado = (viaje) => {
+  if (viaje.estado !== 'documentacion') return;
+  const totalSlots = viaje.camionesSolicitados || 0;
+  if (totalSlots === 0) return;
+  const conCarta = viaje.camionesAsignados.filter(
+    c => c.cartaDePorte?.ruta
+  ).length;
+  if (conCarta >= totalSlots) {
+    viaje.estado = 'confirmado';
+  } else {
+    viaje.estado = 'documentacion';
+  }
+};
+
+const populateViajeConChoferes = async (viaje) => {
+  // Guardar los IDs de transportista ANTES del populate
+  const transportistaIds = viaje.camionesAsignados.map(t => t.transportista ? String(t.transportista) : null);
+  await viaje.populate('productor transportista camionesAsignados.camion');
+
+  // Convertir a objeto plano para poder mutar campos de subdocumentos libremente
+  const viajeObj = viaje.toObject({ virtuals: false });
+
+  for (let idx = 0; idx < viajeObj.camionesAsignados.length; idx++) {
+    const rawId = transportistaIds[idx];
+    if (!rawId) continue;
+    const chofer = await Chofer.findById(rawId).lean();
+    if (chofer) {
+      const esIndependiente = !chofer.transportistas || chofer.transportistas.length === 0;
+      viajeObj.camionesAsignados[idx].transportista = { _id: String(chofer._id), nombre: chofer.nombre, esChoferIndependiente: esIndependiente };
+    } else {
+      // Fallback: dato legacy donde se guardó un Transportista._id
+      const transportista = await Transportista.findById(rawId).lean();
+      if (transportista) {
+        viajeObj.camionesAsignados[idx].transportista = { _id: String(transportista._id), nombre: transportista.nombre || transportista.razonSocial, esLegacyTransportista: true };
+      }
+    }
+  }
+  for (const truck of viajeObj.camionesAsignados) {
+    if (truck.subEstado === 'pendiente' && truck.camion && truck.transportista) {
+      truck.subEstado = 'asignado';
+    }
+  }
+  return viajeObj;
+};
 
 const haversineKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
@@ -124,6 +183,16 @@ export const getTrips = async (req, res) => {
       .populate('transportista')
       .sort({ createdAt: -1 });
 
+    const sinNumero = viajes.filter(v => !v.numeroViaje);
+    if (sinNumero.length > 0) {
+      const totalDocs = await Viaje.countDocuments();
+      const savePromises = sinNumero.map(async (v, idx) => {
+        v.numeroViaje = `VJ-${String(totalDocs - idx).padStart(6, '0')}`;
+        return v.save();
+      });
+      await Promise.all(savePromises);
+    }
+
     res.json({ trips: viajes });
   } catch (error) {
     const { status, message } = sanitizeError(error);
@@ -133,15 +202,14 @@ export const getTrips = async (req, res) => {
 
 export const getTripById = async (req, res) => {
   try {
-    const viaje = await Viaje.findById(req.params.id)
-      .populate('productor')
-      .populate('transportista');
+    const viaje = await Viaje.findById(req.params.id);
 
     if (!viaje) {
       return res.status(404).json({ message: 'Viaje no encontrado' });
     }
 
-    res.json({ trip: viaje });
+    const viajePopulado = await populateViajeConChoferes(viaje);
+    res.json({ trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
@@ -370,6 +438,28 @@ export const addCheckIn = async (req, res) => {
   }
 };
 
+export const recalcularEstado = async (req, res) => {
+  try {
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const estadoAnterior = viaje.estado;
+
+    if (viaje.estado === 'buscando_camiones') {
+      checkYTransicionarDocumentacion(viaje);
+    }
+    if (viaje.estado === 'documentacion') {
+      checkYTransicionarConfirmado(viaje);
+    }
+
+    await viaje.save();
+    res.json({ message: 'Estado recalculado', estadoAnterior, estadoActual: viaje.estado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const assignCamion = async (req, res) => {
   try {
     const { camionId, transportistaId } = req.body;
@@ -389,8 +479,9 @@ export const assignCamion = async (req, res) => {
       subEstado: 'asignado'
     });
 
+    checkYTransicionarDocumentacion(viaje);
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    const viajePopulado = await populateViajeConChoferes(viaje);
 
     await registrarAuditoria({
       realizadoPor: req.user._id,
@@ -402,7 +493,7 @@ export const assignCamion = async (req, res) => {
       ip: req.ip,
     });
 
-    res.json({ message: 'Camión asignado exitosamente', trip: viaje });
+    res.json({ message: 'Camión asignado exitosamente', trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
@@ -421,10 +512,86 @@ export const removeCamion = async (req, res) => {
     if (idx === -1) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
 
     viaje.camionesAsignados.splice(idx, 1);
+    if (['documentacion', 'confirmado'].includes(viaje.estado)) {
+      viaje.estado = 'buscando_camiones';
+    }
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    const viajePopulado = await populateViajeConChoferes(viaje);
 
-    res.json({ message: 'Camión removido exitosamente', trip: viaje });
+    res.json({ message: 'Camión removido exitosamente', trip: viajePopulado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckDriver = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { transportistaId } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.transportista = transportistaId || null;
+    if (transportistaId && truck.camion) {
+      truck.subEstado = 'asignado';
+    } else if (!transportistaId) {
+      truck.subEstado = 'pendiente';
+    }
+    checkYTransicionarDocumentacion(viaje);
+    await viaje.save();
+    const viajePopulado = await populateViajeConChoferes(viaje);
+
+    res.json({ message: 'Chofer actualizado exitosamente', trip: viajePopulado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckVehicle = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { camionId } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.camion = camionId;
+    checkYTransicionarDocumentacion(viaje);
+    await viaje.save();
+    const viajePopulado = await populateViajeConChoferes(viaje);
+
+    res.json({ message: 'Camión actualizado exitosamente', trip: viajePopulado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckStatus = async (req, res) => {
+  try {
+    const { truckId } = req.params;
+    const { subEstado } = req.body;
+    
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const truck = viaje.camionesAsignados.find(c => c._id.toString() === truckId);
+    if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
+
+    truck.subEstado = subEstado;
+    await viaje.save();
+    const viajePopulado = await populateViajeConChoferes(viaje);
+
+    res.json({ message: 'Estado actualizado exitosamente', trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
@@ -464,7 +631,7 @@ export const checkinCamion = async (req, res) => {
     }
 
     await viaje.save();
-    await viaje.populate('productor transportista camionesAsignados.camion camionesAsignados.transportista');
+    const viajePopulado = await populateViajeConChoferes(viaje);
 
     io.to(`trip-${viaje._id}`).emit('camion-checkin', {
       tripId: viaje._id,
@@ -473,7 +640,7 @@ export const checkinCamion = async (req, res) => {
       timestamp: new Date()
     });
 
-    res.json({ message: 'Check-in registrado', trip: viaje });
+    res.json({ message: 'Check-in registrado', trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });

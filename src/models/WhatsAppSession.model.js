@@ -8,8 +8,11 @@ const whatsappSessionSchema = new mongoose.Schema({
   },
   transportistaId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Transportista',
-    required: true
+    ref: 'Transportista'
+  },
+  choferId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Chofer'
   },
   viajeId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -22,7 +25,7 @@ const whatsappSessionSchema = new mongoose.Schema({
   },
   context: {
     type: String,
-    enum: ['trip_offer', 'check_in', 'general', 'problem_report'],
+    enum: ['trip_offer', 'check_in', 'general', 'problem_report', 'waiting_truck_count'],
     default: 'general'
   },
   lastMessageAt: {

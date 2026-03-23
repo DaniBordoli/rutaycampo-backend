@@ -16,7 +16,7 @@ import rateRoutes from './routes/rate.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import trackingRoutes from './routes/tracking.routes.js';
 import camionRoutes from './routes/camion.routes.js';
-import flotaRoutes from './routes/flota.routes.js';
+import choferRoutes from './routes/chofer.routes.js';
 import auditoriaRoutes from './routes/auditoria.routes.js';
 import cookieParser from 'cookie-parser';
 import { csrfProtection } from './middleware/csrf.js';
@@ -27,6 +27,7 @@ import { startReactivationJob } from './jobs/reactivateTransportistas.job.js';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
@@ -58,7 +59,6 @@ app.use(morgan('dev'));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads'));
 
 app.use(rateLimiter);
 app.use(csrfProtection);
@@ -75,7 +75,7 @@ app.use('/api/rates', rateRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/camiones', camionRoutes);
-app.use('/api/flotas', flotaRoutes);
+app.use('/api/choferes', choferRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
 
 app.use(errorHandler);

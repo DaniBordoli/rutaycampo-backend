@@ -1,5 +1,6 @@
 ﻿import Transportista from '../models/Transportista.model.js';
 import Camion from '../models/Camion.model.js';
+import Chofer from '../models/Chofer.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 
@@ -213,6 +214,38 @@ export const activateTransportista = async (req, res) => {
       message: 'Transportista activado exitosamente',
       transportista
     });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const getChoferesIndependientes = async (req, res) => {
+  try {
+    // Buscar choferes independientes que no tienen transportistas asociados
+    const choferes = await Chofer.find({
+      $or: [
+        { transportistas: { $exists: false } },
+        { transportistas: { $size: 0 } }
+      ],
+      activa: true
+    }).sort({ nombre: 1 });
+
+    // Mapear los choferes al formato de transportista para que sean compatibles
+    const choferesFormateados = choferes.map(chofer => ({
+      _id: chofer._id,
+      razonSocial: chofer.nombre,
+      nombre: chofer.responsable,
+      cuit: chofer.cuit,
+      numeroWhatsapp: chofer.telefono,
+      email: chofer.email,
+      activo: chofer.activa,
+      disponible: true,
+      notas: chofer.notas,
+      esChoferIndependiente: true
+    }));
+
+    res.json(choferesFormateados);
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });

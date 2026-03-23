@@ -1,5 +1,6 @@
 import Camion from '../models/Camion.model.js';
 import Transportista from '../models/Transportista.model.js';
+import Chofer from '../models/Chofer.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 import { uploadDocumentos, cloudinary } from '../services/cloudinary.service.js';
@@ -8,8 +9,11 @@ export const createCamion = async (req, res) => {
   try {
     const { transportista, patente, marca, modelo, año, tipo, capacidad, unidadCapacidad, escalable, seguro, vtv, notas } = req.body;
 
+    // Verificar si existe como Transportista o como Chofer independiente
     const transportistaExists = await Transportista.findById(transportista);
-    if (!transportistaExists) {
+    const choferExists = await Chofer.findById(transportista);
+    
+    if (!transportistaExists && !choferExists) {
       return res.status(404).json({ message: 'Transportista no encontrado' });
     }
 
