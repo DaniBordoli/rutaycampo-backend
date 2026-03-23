@@ -18,6 +18,20 @@ const checkYTransicionarDocumentacion = (viaje) => {
   }
 };
 
+export const checkYTransicionarConfirmado = (viaje) => {
+  if (viaje.estado !== 'documentacion') return;
+  const totalSlots = viaje.camionesSolicitados || 0;
+  if (totalSlots === 0) return;
+  const conCarta = viaje.camionesAsignados.filter(
+    c => c.cartaDePorte?.ruta
+  ).length;
+  if (conCarta >= totalSlots) {
+    viaje.estado = 'confirmado';
+  } else {
+    viaje.estado = 'documentacion';
+  }
+};
+
 const populateViajeConChoferes = async (viaje) => {
   // Guardar los IDs de transportista ANTES del populate
   const transportistaIds = viaje.camionesAsignados.map(t => t.transportista ? String(t.transportista) : null);
@@ -424,6 +438,28 @@ export const addCheckIn = async (req, res) => {
   }
 };
 
+export const recalcularEstado = async (req, res) => {
+  try {
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const estadoAnterior = viaje.estado;
+
+    if (viaje.estado === 'buscando_camiones') {
+      checkYTransicionarDocumentacion(viaje);
+    }
+    if (viaje.estado === 'documentacion') {
+      checkYTransicionarConfirmado(viaje);
+    }
+
+    await viaje.save();
+    res.json({ message: 'Estado recalculado', estadoAnterior, estadoActual: viaje.estado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
 export const assignCamion = async (req, res) => {
   try {
     const { camionId, transportistaId } = req.body;
@@ -476,6 +512,9 @@ export const removeCamion = async (req, res) => {
     if (idx === -1) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
 
     viaje.camionesAsignados.splice(idx, 1);
+    if (['documentacion', 'confirmado'].includes(viaje.estado)) {
+      viaje.estado = 'buscando_camiones';
+    }
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
 

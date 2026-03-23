@@ -3,11 +3,15 @@ import {
   sendOfferToCarriers, 
   handleWebhook, 
   sendCheckInReminder,
-  sendTripUpdate 
+  sendTripUpdate,
+  getTripOffers
 } from '../controllers/whatsapp.controller.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Obtener ofertas recibidas de un viaje
+router.get('/offers/:tripId', authenticate, getTripOffers);
 
 // Enviar oferta de viaje a transportistas
 router.post('/send-offer', authenticate, sendOfferToCarriers);

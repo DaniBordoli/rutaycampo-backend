@@ -27,6 +27,7 @@ import { startReactivationJob } from './jobs/reactivateTransportistas.job.js';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
@@ -58,7 +59,6 @@ app.use(morgan('dev'));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads'));
 
 app.use(rateLimiter);
 app.use(csrfProtection);

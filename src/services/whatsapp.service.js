@@ -1,73 +1,86 @@
 import twilio from 'twilio';
 
+const TRANSIENT_TWILIO_CODES = [20429, 20503, 30001, 30002, 30003, 30004, 30005, 30006];
+
 class WhatsAppService {
   constructor() {
-    this.client = null;
+    this._client = null;
+    this._misconfigured = false;
     this.fromNumber = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
   }
 
   getClient() {
-    if (!this.client) {
+    if (this._misconfigured) return null;
+    if (!this._client) {
       const sid = process.env.TWILIO_ACCOUNT_SID;
       const token = process.env.TWILIO_AUTH_TOKEN;
-      
       if (!sid || !token || sid === 'TU_ACCOUNT_SID_AQUI' || token === 'TU_AUTH_TOKEN_AQUI') {
-        console.warn('⚠️ Twilio no configurado correctamente. WhatsApp Bot deshabilitado.');
+        console.warn('⚠️  Twilio no configurado. WhatsApp deshabilitado.');
+        this._misconfigured = true;
         return null;
       }
-      
-      this.client = twilio(sid, token);
+      this._client = twilio(sid, token);
     }
-    return this.client;
+    return this._client;
   }
 
   formatPhoneNumber(phone) {
-    // Limpiar el número
-    let cleanPhone = phone.replace(/\s+/g, '').replace(/-/g, '');
-    
-    // Si ya tiene el formato whatsapp:, verificar el 9
-    if (cleanPhone.startsWith('whatsapp:')) {
-      cleanPhone = cleanPhone.replace('whatsapp:', '');
+    // Quitar espacios, guiones y prefijo whatsapp:
+    let n = phone.replace(/\s+|-/g, '').replace(/^whatsapp:/, '').replace(/^\+/, '');
+
+    // Solo dígitos a partir de aquí
+    n = n.replace(/\D/g, '');
+
+    // Argentina: normalizar a 549XXXXXXXXXX (11 dígitos de área+número)
+    if (n.startsWith('549')) {
+      // ya correcto: 549XXXXXXXXXX
+    } else if (n.startsWith('54')) {
+      // 54XXXXXXXXXX → insertar 9
+      n = '549' + n.slice(2);
+    } else if (n.length === 10) {
+      // XXXXXXXXXX (10 dígitos, sin código de país) → 549XXXXXXXXXX
+      n = '549' + n;
+    } else if (n.length === 8 || n.length === 7) {
+      // número corto sin código de área → asumir GBA (11)
+      n = '54911' + n;
     }
-    
-    // Remover + si existe
-    if (cleanPhone.startsWith('+')) {
-      cleanPhone = cleanPhone.substring(1);
-    }
-    
-    // Para Argentina (54), asegurar que tenga el 9 después del código de país
-    if (cleanPhone.startsWith('54')) {
-      // Si no tiene el 9 después del 54, agregarlo
-      if (!cleanPhone.startsWith('549')) {
-        cleanPhone = '549' + cleanPhone.substring(2);
-      }
-    } else if (cleanPhone.startsWith('11')) {
-      // Si empieza con 11 (código de área de Buenos Aires), agregar 549
-      cleanPhone = '549' + cleanPhone;
-    }
-    
-    return `whatsapp:+${cleanPhone}`;
+
+    return `whatsapp:+${n}`;
   }
 
-  async sendMessage(to, body) {
-    try {
-      const client = this.getClient();
-      if (!client) {
-        throw new Error('Twilio no está configurado. Verifica TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN en .env');
-      }
-
-      const formattedTo = this.formatPhoneNumber(to);
-      const message = await client.messages.create({
-        from: this.fromNumber,
-        to: formattedTo,
-        body
-      });
-      console.log(`WhatsApp enviado a ${formattedTo}: ${message.sid}`);
-      return { success: true, messageId: message.sid };
-    } catch (error) {
-      console.error('Error al enviar WhatsApp:', error);
-      throw error;
+  async sendMessage(to, body, retries = 2) {
+    const client = this.getClient();
+    if (!client) {
+      throw new Error('Twilio no está configurado. Verificá TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN en .env');
     }
+
+    const formattedTo = this.formatPhoneNumber(to);
+    let lastError;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const message = await client.messages.create({
+          from: this.fromNumber,
+          to: formattedTo,
+          body,
+        });
+        console.log(`📤 WhatsApp → ${formattedTo} [${message.sid}]`);
+        return { success: true, messageId: message.sid };
+      } catch (error) {
+        lastError = error;
+        const isTransient = TRANSIENT_TWILIO_CODES.includes(error.code);
+        if (isTransient && attempt < retries) {
+          const delay = 500 * (attempt + 1);
+          console.warn(`⚠️  Twilio error ${error.code}, reintentando en ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          break;
+        }
+      }
+    }
+
+    console.error(`❌ WhatsApp falló → ${formattedTo}:`, lastError?.message);
+    throw lastError;
   }
 
   async sendTripOffer(transportista, viaje) {
@@ -81,25 +94,23 @@ class WhatsAppService {
     const fecha = viaje.fechaProgramada ? new Date(viaje.fechaProgramada).toLocaleDateString('es-AR') : 'No especificada';
     const precio = viaje.precios?.precioConfirmado || viaje.precios?.precioBase || 0;
     const carga = viaje.tipoCarga || 'grano';
-    const peso = viaje.peso || 0;
+    const camiones = viaje.camionesSolicitados || 1;
 
-    return `🚚 *Nueva Oferta de Viaje #${viaje.numeroViaje}*
+    return `🚚 *¡Hay un nuevo viaje disponible!*
 
-📍 *Origen:* ${origen}, ${viaje.origen?.provincia || ''}
-📍 *Destino:* ${destino}, ${viaje.destino?.provincia || ''}
-📅 *Fecha:* ${fecha}
-💰 *Pago:* $${precio.toLocaleString('es-AR')}
-📦 *Carga:* ${carga} - ${peso} tn
+� Fecha: ${fecha}
+� Origen: ${origen}, ${viaje.origen?.provincia || ''}
+📍 Destino: ${destino}, ${viaje.destino?.provincia || ''}
+� Cantidad de camiones: ${camiones}
+📦 Producto: ${carga}
+💰 Pago: $${precio.toLocaleString('es-AR')}
 
-Hola ${transportista.nombreConductor},
+Hola ${transportista.nombreConductor || transportista.razonSocial},
 
-Tenemos un viaje disponible para vos.
-
-*Responde con:*
-1️⃣ - Confirmo
-2️⃣ - No tengo disponibilidad
-
-_Viaje ID: ${viaje._id}_`;
+*Respondé con una de estas opciones:*
+1️⃣ Tengo ${camiones} camiones disponibles
+2️⃣ Tengo menos camiones disponibles
+3️⃣ No tengo disponibilidad`;
   }
 
   async sendTripDetails(transportista, viaje) {
@@ -253,9 +264,9 @@ _Viaje ID: ${viaje._id}_`;
   }
 
   parseIncomingMessage(body, sessionContext) {
-    const text = body.trim().toLowerCase();
-    
-    // Si el contexto es check_in, interpretar números como check-ins
+    const text = (body || '').trim().toLowerCase();
+
+    // Contexto check_in: números 1-5 son estados del viaje
     if (sessionContext === 'check_in') {
       const checkInMap = {
         '1': 'llegue_a_cargar',
@@ -264,28 +275,25 @@ _Viaje ID: ${viaje._id}_`;
         '4': 'llegue_a_destino',
         '5': 'descargado'
       };
-
       if (checkInMap[text]) {
         return { type: 'check_in', status: checkInMap[text] };
       }
     }
-    
-    // Si el contexto es trip_offer, interpretar números como confirmación/rechazo
-    if (sessionContext === 'trip_offer') {
-      if (text === '1' || text.includes('confirmo')) {
-        return { type: 'trip_confirmation', trucks: 1 };
+
+    // Contexto trip_offer: 1 = tengo todos, 2 = tengo menos, 3 = no tengo
+    if (sessionContext === 'trip_offer' || !sessionContext) {
+      if (text === '1' || text.includes('tengo') && text.includes('disponible') && !text.includes('menos')) {
+        // Intentar extraer número de camiones del texto
+        const numMatch = text.match(/tengo\s+(\d+)\s+camion/);
+        const count = numMatch ? parseInt(numMatch[1], 10) : null;
+        return { type: 'offer_full_trucks', count };
       }
-      if (text === '2' || text.includes('no tengo')) {
+      if (text === '2' || (text.includes('menos') && text.includes('camion'))) {
+        return { type: 'offer_fewer_trucks' };
+      }
+      if (text === '3' || text.includes('no tengo') || text.includes('sin disponibilidad') || text.includes('no hay')) {
         return { type: 'trip_rejection' };
       }
-    }
-
-    // Fallback: detectar por palabras clave
-    if (text.includes('confirmo')) {
-      return { type: 'trip_confirmation', trucks: 1 };
-    }
-    if (text.includes('no tengo')) {
-      return { type: 'trip_rejection' };
     }
 
     return { type: 'unknown', text };

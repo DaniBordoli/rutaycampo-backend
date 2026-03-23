@@ -4,8 +4,14 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,h
 
 const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
+const WEBHOOK_PATHS = ['/api/whatsapp/webhook'];
+
 export const csrfProtection = (req, res, next) => {
   if (!STATE_CHANGING_METHODS.includes(req.method)) {
+    return next();
+  }
+
+  if (WEBHOOK_PATHS.some(path => req.originalUrl.startsWith(path))) {
     return next();
   }
 
