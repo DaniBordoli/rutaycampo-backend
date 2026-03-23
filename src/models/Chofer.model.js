@@ -47,7 +47,7 @@ const choferSchema = new mongoose.Schema({
     name: { type: String },
     url: { type: String },
     size: { type: Number },
-    publicId: { type: String },
+    storagePath: { type: String },
     uploadedAt: { type: Date, default: Date.now }
   }],
   notas: {
@@ -59,7 +59,6 @@ const choferSchema = new mongoose.Schema({
 });
 
 choferSchema.index({ nombre: 1 });
-choferSchema.index({ cuit: 1 });
 choferSchema.index({ activa: 1 });
 choferSchema.index({ prioridad: 1 });
 

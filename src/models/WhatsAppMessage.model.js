@@ -56,7 +56,6 @@ const whatsappMessageSchema = new mongoose.Schema({
   timestamps: true
 });
 
-whatsappMessageSchema.index({ messageId: 1 });
 whatsappMessageSchema.index({ transportistaId: 1, createdAt: -1 });
 whatsappMessageSchema.index({ viajeId: 1, createdAt: -1 });
 

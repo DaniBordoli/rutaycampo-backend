@@ -3,7 +3,10 @@ import Transportista from '../models/Transportista.model.js';
 import Chofer from '../models/Chofer.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
-import { uploadDocumentos, cloudinary } from '../services/cloudinary.service.js';
+import { upload, uploadToSupabaseMultiple } from '../middleware/upload.js';
+import { createClient } from '@supabase/supabase-js';
+
+const getSupabase = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 export const createCamion = async (req, res) => {
   try {
@@ -282,45 +285,34 @@ export const assignCamionToTransportista = async (req, res) => {
   }
 };
 
-export const uploadDocumentosHandler = (req, res) => {
-  uploadDocumentos(req, res, async (err) => {
-    if (err) {
-      console.error('❌ Error en uploadDocumentos (multer/cloudinary):', err);
-      return res.status(400).json({ message: err.message || 'Error al subir archivos' });
-    }
-
+export const uploadDocumentosHandler = [
+  upload.array('documentos', 10),
+  uploadToSupabaseMultiple(process.env.SUPABASE_BUCKET || 'documentos', 'camiones'),
+  async (req, res) => {
     try {
       const camion = await Camion.findById(req.params.id);
-      if (!camion) {
-        return res.status(404).json({ message: 'Camión no encontrado' });
-      }
-
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: 'No se recibieron archivos' });
-      }
+      if (!camion) return res.status(404).json({ message: 'Camión no encontrado' });
+      if (!req.files || req.files.length === 0) return res.status(400).json({ message: 'No se recibieron archivos' });
 
       const nuevosDocumentos = req.files.map(file => ({
-        url: file.path,
+        url: file.publicUrl,
         nombre: file.originalname,
         tipo: file.mimetype,
-        publicId: file.filename,
+        storagePath: file.storagePath,
         subidoEn: new Date(),
       }));
 
       camion.documentos.push(...nuevosDocumentos);
       await camion.save();
 
-      res.json({
-        message: `${req.files.length} archivo(s) subido(s) exitosamente`,
-        documentos: camion.documentos,
-      });
+      res.json({ message: `${req.files.length} archivo(s) subido(s) exitosamente`, documentos: camion.documentos });
     } catch (error) {
       console.error('Error al guardar documentos:', error);
       const { status, message } = sanitizeError(error);
       res.status(status).json({ message });
     }
-  });
-};
+  }
+];
 
 export const deleteDocumento = async (req, res) => {
   try {
@@ -336,9 +328,9 @@ export const deleteDocumento = async (req, res) => {
       return res.status(404).json({ message: 'Documento no encontrado' });
     }
 
-    if (doc.publicId) {
-      const resourceType = doc.tipo === 'application/pdf' ? 'raw' : 'image';
-      await cloudinary.uploader.destroy(doc.publicId, { resource_type: resourceType });
+    if (doc.storagePath) {
+      const client = getSupabase();
+      await client.storage.from(process.env.SUPABASE_BUCKET || 'documentos').remove([doc.storagePath]);
     }
 
     camion.documentos.pull(docId);

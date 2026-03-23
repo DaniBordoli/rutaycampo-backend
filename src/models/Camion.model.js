@@ -75,7 +75,7 @@ const camionSchema = new mongoose.Schema({
     url: { type: String, required: true },
     nombre: { type: String },
     tipo: { type: String },
-    publicId: { type: String },
+    storagePath: { type: String },
     subidoEn: { type: Date, default: Date.now }
   }],
   notas: {
@@ -87,7 +87,6 @@ const camionSchema = new mongoose.Schema({
 });
 
 camionSchema.index({ transportista: 1 });
-camionSchema.index({ patente: 1 });
 camionSchema.index({ disponible: 1, activo: 1 });
 camionSchema.index({ createdAt: -1 });
 
