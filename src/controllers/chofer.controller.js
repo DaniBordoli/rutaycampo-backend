@@ -2,7 +2,10 @@ import Chofer from '../models/Chofer.model.js';
 import Transportista from '../models/Transportista.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
-import { uploadDocumentosChofer, cloudinary } from '../services/cloudinary.service.js';
+import { upload, uploadToSupabaseMultiple } from '../middleware/upload.js';
+import { createClient } from '@supabase/supabase-js';
+
+const getSupabase = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 
 export const createChofer = async (req, res) => {
@@ -274,13 +277,10 @@ export const removeTransportistaFromChofer = async (req, res) => {
   }
 };
 
-export const uploadDocumentosHandler = (req, res) => {
-  uploadDocumentosChofer(req, res, async (err) => {
-    if (err) {
-      console.error('Error en uploadDocumentosChofer:', err);
-      return res.status(400).json({ message: err.message || 'Error al subir archivos' });
-    }
-
+export const uploadDocumentosHandler = [
+  upload.array('documentos', 10),
+  uploadToSupabaseMultiple(process.env.SUPABASE_BUCKET || 'documentos', 'choferes'),
+  async (req, res) => {
     try {
       const chofer = await Chofer.findById(req.params.id);
       if (!chofer) return res.status(404).json({ message: 'Chofer no encontrado' });
@@ -288,9 +288,9 @@ export const uploadDocumentosHandler = (req, res) => {
 
       const nuevosDocumentos = req.files.map(file => ({
         name: file.originalname,
-        url: file.path,
+        url: file.publicUrl,
         size: file.size,
-        publicId: file.filename,
+        storagePath: file.storagePath,
         uploadedAt: new Date(),
       }));
 
@@ -303,8 +303,8 @@ export const uploadDocumentosHandler = (req, res) => {
       const { status, message } = sanitizeError(error);
       res.status(status).json({ message });
     }
-  });
-};
+  }
+];
 
 export const deleteDocumentoChofer = async (req, res) => {
   try {
@@ -316,9 +316,9 @@ export const deleteDocumentoChofer = async (req, res) => {
     const doc = chofer.documentos.id(docId);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado' });
 
-    if (doc.publicId) {
-      const resourceType = doc.url?.includes('/raw/') ? 'raw' : 'image';
-      await cloudinary.uploader.destroy(doc.publicId, { resource_type: resourceType });
+    if (doc.storagePath) {
+      const client = getSupabase();
+      await client.storage.from(process.env.SUPABASE_BUCKET || 'documentos').remove([doc.storagePath]);
     }
 
     chofer.documentos.pull(docId);
