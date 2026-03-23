@@ -4,11 +4,11 @@ import { checkAndReactivateTransportistas } from '../controllers/transportista.c
 export const startReactivationJob = () => {
   console.log('='.repeat(60));
   console.log('🚀 Iniciando Job de Reactivación de Transportistas');
-  console.log('⏰ Frecuencia: Cada 1 minuto (MODO TESTING)');
+  console.log('⏰ Frecuencia: Cada 1 hora');
   console.log('📅 Hora de inicio:', new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }));
   console.log('='.repeat(60));
 
-  cron.schedule('* * * * *', async () => {
+  cron.schedule('0 * * * *', async () => {
     const now = new Date();
     console.log('\n' + '='.repeat(60));
     console.log('⏰ EJECUTANDO JOB DE REACTIVACIÓN');

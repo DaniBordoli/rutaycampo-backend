@@ -16,10 +16,13 @@ import {
   deleteTrip,
   updateTruckDriver,
   updateTruckVehicle,
-  updateTruckStatus
+  updateTruckStatus,
+  checkYTransicionarConfirmado,
+  recalcularEstado
 } from '../controllers/trip.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
-import { upload } from '../middleware/upload.js';
+import { upload, uploadToSupabase } from '../middleware/upload.js';
+import Viaje from '../models/Viaje.model.js';
 
 const router = express.Router();
 
@@ -42,25 +45,75 @@ router.post('/:id/camiones/:camionId/checkin', authorize('transportista', 'super
 router.post('/:id/checkin', authorize('transportista', 'superadmin', 'operador'), addCheckIn);
 router.patch('/:id/location', authorize('transportista'), updateLocation);
 router.delete('/:id', authorize('superadmin', 'operador'), deleteTrip);
+router.patch('/:id/recalcular-estado', authorize('superadmin', 'operador'), recalcularEstado);
 
 router.post(
-  '/:id/upload/carta-porte',
+  '/:id/camiones/:camionId/upload/carta-porte',
+  authorize('superadmin', 'operador', 'productor'),
   upload.single('cartaDePorte'),
+  uploadToSupabase(process.env.SUPABASE_BUCKET || 'documentos'),
   async (req, res) => {
     try {
-      const trip = await Trip.findById(req.params.id);
-      if (!trip) {
-        return res.status(404).json({ message: 'Viaje no encontrado' });
+      if (!req.file) return res.status(400).json({ message: 'No se recibió ningún archivo' });
+      const viaje = await Viaje.findById(req.params.id);
+      if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+      const camion = viaje.camionesAsignados.id(req.params.camionId);
+      if (!camion) return res.status(404).json({ message: 'Camión asignado no encontrado' });
+      if (camion.cartaDePorte?.ruta) {
+        const bucketName = process.env.SUPABASE_BUCKET || 'documentos';
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const prefix = `${supabaseUrl}/storage/v1/object/public/${bucketName}/`;
+        const oldFilename = camion.cartaDePorte.ruta.startsWith(prefix)
+          ? camion.cartaDePorte.ruta.slice(prefix.length)
+          : null;
+        if (oldFilename) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const client = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY);
+          await client.storage.from(bucketName).remove([decodeURIComponent(oldFilename)]);
+        }
       }
 
-      trip.cartaDePorte = {
-        filename: req.file.originalname,
-        path: req.file.path,
-        uploadedAt: new Date()
+      camion.cartaDePorte = {
+        nombreArchivo: req.file.originalname,
+        ruta: req.file.publicUrl,
+        fechaSubida: new Date()
       };
+      checkYTransicionarConfirmado(viaje);
+      await viaje.save();
+      res.json({ message: 'Carta de porte subida exitosamente', cartaDePorte: camion.cartaDePorte, estado: viaje.estado });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+);
 
-      await trip.save();
-      res.json({ message: 'Carta de porte subida exitosamente', trip });
+router.delete(
+  '/:id/camiones/:camionId/carta-porte',
+  authorize('superadmin', 'operador', 'productor'),
+  async (req, res) => {
+    try {
+      const viaje = await Viaje.findById(req.params.id);
+      if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+      const camion = viaje.camionesAsignados.id(req.params.camionId);
+      if (!camion) return res.status(404).json({ message: 'Camión asignado no encontrado' });
+      if (!camion.cartaDePorte?.ruta) return res.status(404).json({ message: 'No hay carta de porte para eliminar' });
+
+      const publicUrl = camion.cartaDePorte.ruta;
+      const bucketName = process.env.SUPABASE_BUCKET || 'documentos';
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const prefix = `${supabaseUrl}/storage/v1/object/public/${bucketName}/`;
+      const filename = publicUrl.startsWith(prefix) ? publicUrl.slice(prefix.length) : null;
+
+      if (filename) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const client = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_KEY);
+        await client.storage.from(bucketName).remove([decodeURIComponent(filename)]);
+      }
+
+      camion.cartaDePorte = undefined;
+      checkYTransicionarConfirmado(viaje);
+      await viaje.save();
+      res.json({ message: 'Carta de porte eliminada exitosamente', estado: viaje.estado });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -69,22 +122,20 @@ router.post(
 
 router.post(
   '/:id/upload/cupo',
+  authorize('superadmin', 'operador', 'productor'),
   upload.single('cupo'),
   async (req, res) => {
     try {
-      const trip = await Trip.findById(req.params.id);
-      if (!trip) {
-        return res.status(404).json({ message: 'Viaje no encontrado' });
-      }
-
-      trip.cupo = {
-        filename: req.file.originalname,
-        path: req.file.path,
-        uploadedAt: new Date()
+      if (!req.file) return res.status(400).json({ message: 'No se recibió ningún archivo' });
+      const viaje = await Viaje.findById(req.params.id);
+      if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+      viaje.cupo = {
+        nombreArchivo: req.file.originalname,
+        ruta: req.file.path,
+        fechaSubida: new Date()
       };
-
-      await trip.save();
-      res.json({ message: 'Cupo subido exitosamente', trip });
+      await viaje.save();
+      res.json({ message: 'Cupo subido exitosamente', cupo: viaje.cupo });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

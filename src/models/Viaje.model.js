@@ -14,6 +14,11 @@ const camionAsignadoSchema = new mongoose.Schema({
     enum: ['pendiente', 'asignado', 'en_origen', 'cargado', 'iniciado', 'en_destino', 'finalizado'],
     default: 'pendiente'
   },
+  cartaDePorte: {
+    nombreArchivo: String,
+    ruta: String,
+    fechaSubida: Date
+  },
   checkIns: [{
     tipo: {
       type: String,

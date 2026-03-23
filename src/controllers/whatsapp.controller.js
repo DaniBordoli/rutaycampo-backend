@@ -1,10 +1,78 @@
 ﻿import Viaje from '../models/Viaje.model.js';
 import Transportista from '../models/Transportista.model.js';
+import Chofer from '../models/Chofer.model.js';
 import WhatsAppSession from '../models/WhatsAppSession.model.js';
 import WhatsAppMessage from '../models/WhatsAppMessage.model.js';
 import whatsappService from '../services/whatsapp.service.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 
+// Normaliza cualquier número argentino a "549XXXXXXXXXX" (solo dígitos)
+function normalizePhone(phone) {
+  if (!phone) return '';
+  let n = String(phone).replace(/[\s\-\+\(\)]/g, '').replace(/\D/g, '');
+  if (n.startsWith('549')) return n;
+  if (n.startsWith('54')) return '549' + n.slice(2);
+  if (n.length === 10) return '549' + n;
+  return n;
+}
+
+
+export const getTripOffers = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const sessions = await WhatsAppSession.find({
+      viajeId: tripId,
+      context: { $in: ['trip_offer', 'waiting_truck_count'] },
+      'metadata.camionesCometidos': { $exists: true }
+    }).lean();
+
+    const offers = await Promise.all(sessions.map(async (s) => {
+      let nombre = null;
+      let telefono = null;
+      let email = null;
+      let tipo = null;
+
+      if (s.transportistaId) {
+        const t = await Transportista.findById(s.transportistaId, 'razonSocial nombreConductor numeroWhatsapp emailContacto').lean();
+        if (t) {
+          nombre = t.razonSocial;
+          telefono = t.numeroWhatsapp;
+          email = t.emailContacto;
+          tipo = 'transportista';
+        }
+      } else if (s.choferId) {
+        const c = await Chofer.findById(s.choferId, 'nombre telefono email transportistas').lean();
+        if (c) {
+          telefono = c.telefono;
+          email = c.email;
+          if (c.transportistas && c.transportistas.length > 0) {
+            const t = await Transportista.findById(c.transportistas[0], 'razonSocial').lean();
+            nombre = t ? t.razonSocial : c.nombre;
+            tipo = 'transportista';
+          } else {
+            nombre = c.nombre;
+            tipo = 'chofer';
+          }
+        }
+      }
+
+      return {
+        _id: s._id,
+        nombre,
+        telefono,
+        email,
+        tipo,
+        camionesCometidos: s.metadata?.camionesCometidos,
+        respondidoEn: s.updatedAt,
+      };
+    }));
+
+    res.json(offers.filter(o => o.nombre));
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
 
 export const sendOfferToCarriers = async (req, res) => {
   try {
@@ -15,43 +83,73 @@ export const sendOfferToCarriers = async (req, res) => {
       return res.status(404).json({ message: 'Viaje no encontrado' });
     }
 
-    let transportistas;
+    let destinatarios = [];
+
     if (transportistaIds && transportistaIds.length > 0) {
-      transportistas = await Transportista.find({ 
-        _id: { $in: transportistaIds },
-        activo: true 
-      });
+      const transEncontrados = await Transportista.find({ _id: { $in: transportistaIds }, activo: true });
+      const transIds = new Set(transEncontrados.map(t => String(t._id)));
+      const idsNoEncontrados = transportistaIds.filter(id => !transIds.has(String(id)));
+
+      // Los IDs que no están en Transportista, buscarlos en Chofer
+      const choferesEncontrados = idsNoEncontrados.length > 0
+        ? await Chofer.find({ _id: { $in: idsNoEncontrados }, activa: { $ne: false } })
+        : [];
+
+      // Normalizar transportistas al mismo interface
+      const transNorm = transEncontrados.map(t => ({
+        _id: t._id,
+        nombre: t.razonSocial,
+        razonSocial: t.razonSocial,
+        nombreConductor: t.nombreConductor || t.razonSocial,
+        numeroWhatsapp: t.numeroWhatsapp,
+        _coleccion: 'transportista',
+        _doc: t,
+      }));
+      const choferNorm = choferesEncontrados.map(c => ({
+        _id: c._id,
+        nombre: c.nombre,
+        numeroWhatsapp: c.telefono,
+        nombreConductor: c.nombre,
+        razonSocial: c.nombre,
+        _coleccion: 'chofer',
+        _doc: c,
+      }));
+      destinatarios = [...transNorm, ...choferNorm];
     } else {
-      transportistas = await Transportista.find({ 
-        activo: true, 
-        disponible: true 
-      });
+      const transportistas = await Transportista.find({ activo: true, disponible: true });
+      destinatarios = transportistas.map(t => ({
+        _id: t._id,
+        nombre: t.razonSocial,
+        numeroWhatsapp: t.numeroWhatsapp,
+        _coleccion: 'transportista',
+        _doc: t,
+      }));
     }
 
-    if (transportistas.length === 0) {
-      return res.status(404).json({ 
-        message: 'No hay transportistas disponibles' 
-      });
+    if (destinatarios.length === 0) {
+      return res.status(404).json({ message: 'No hay transportistas disponibles' });
     }
 
     const results = [];
-    for (const transportista of transportistas) {
+    for (const dest of destinatarios) {
       try {
-        const result = await whatsappService.sendTripOffer(transportista, viaje);
-        
-        // Crear sesión
+        await whatsappService.sendTripOffer(dest, viaje);
+
+        // Crear sesión con número normalizado
+        const sessionPhone = normalizePhone(dest.numeroWhatsapp);
         await WhatsAppSession.create({
-          phoneNumber: transportista.numeroWhatsapp,
-          transportistaId: transportista._id,
+          phoneNumber: sessionPhone,
+          transportistaId: dest._coleccion === 'transportista' ? dest._id : undefined,
+          choferId: dest._coleccion === 'chofer' ? dest._id : undefined,
           viajeId: viaje._id,
           status: 'waiting_response',
           context: 'trip_offer'
         });
 
-        results.push({ transportista: transportista.razonSocial, success: true });
+        results.push({ transportista: dest.nombre, success: true });
       } catch (error) {
-        console.error(`Error enviando a ${transportista.razonSocial}:`, error);
-        results.push({ transportista: transportista.razonSocial, success: false, error: error.message });
+        console.error(`Error enviando a ${dest.nombre}:`, error);
+        results.push({ transportista: dest.nombre, success: false, error: error.message });
       }
     }
 
@@ -61,7 +159,7 @@ export const sendOfferToCarriers = async (req, res) => {
     res.json({ 
       message: `Ofertas procesadas`,
       results,
-      total: transportistas.length,
+      total: destinatarios.length,
       successful: results.filter(r => r.success).length
     });
   } catch (error) {
@@ -105,42 +203,49 @@ export const handleWebhook = async (req, res) => {
       } : undefined
     });
 
-    // Buscar transportista con múltiples variaciones del número
-    // Variaciones posibles:
-    // 1. +5491136174705 (lo que llega de WhatsApp)
-    // 2. 5491136174705 (sin +)
-    // 3. 1136174705 (solo número local, lo que está en BD)
-    // 4. 541136174705 (sin el 9)
-    
-    const phoneVariations = [
-      phoneNumber,                                    // +5491136174705
-      phoneNumber.replace('+', ''),                   // 5491136174705
-      phoneNumber.replace('+549', ''),                // 1136174705
-      phoneNumber.replace('+54', ''),                 // 91136174705
-      phoneNumber.replace('+5491', ''),               // 136174705
-      phoneNumber.replace(/\D/g, '').slice(-10)       // últimos 10 dígitos
-    ];
+    // Normalizar número entrante para comparar con BD
+    const incomingNorm = normalizePhone(phoneNumber);
 
-    let transportista = null;
-    for (const variation of phoneVariations) {
-      transportista = await Transportista.findOne({ numeroWhatsapp: variation });
-      if (transportista) {
-        console.log(`✅ Transportista encontrado: ${transportista.razonSocial} (formato: "${variation}")`);
-        break;
+    let destinatario = null;
+
+    // Buscar en Transportistas comparando normalizado
+    const allTrans = await Transportista.find({ activo: true }, 'razonSocial nombreConductor numeroWhatsapp');
+    const trans = allTrans.find(t => normalizePhone(t.numeroWhatsapp) === incomingNorm);
+    if (trans) {
+      destinatario = {
+        _id: trans._id,
+        nombre: trans.razonSocial,
+        razonSocial: trans.razonSocial,
+        nombreConductor: trans.nombreConductor || trans.razonSocial,
+        numeroWhatsapp: trans.numeroWhatsapp,
+        _coleccion: 'transportista',
+        _doc: trans,
+      };
+    }
+
+    // Si no se encontró, buscar en Choferes
+    if (!destinatario) {
+      const allChoferes = await Chofer.find({ activa: { $ne: false } }, 'nombre telefono');
+      const chofer = allChoferes.find(c => normalizePhone(c.telefono) === incomingNorm);
+      if (chofer) {
+        destinatario = {
+          _id: chofer._id,
+          nombre: chofer.nombre,
+          razonSocial: chofer.nombre,
+          nombreConductor: chofer.nombre,
+          numeroWhatsapp: chofer.telefono,
+          _coleccion: 'chofer',
+          _doc: chofer,
+        };
       }
     }
-    
-    if (!transportista) {
-      // Debug: Mostrar todos los números en la BD
-      const allTransportistas = await Transportista.find({}, 'razonSocial numeroWhatsapp');
-      console.log('📋 Números en BD:', allTransportistas.map(t => `${t.razonSocial}: "${t.numeroWhatsapp}"`));
-      console.log('📋 Variaciones probadas:', phoneVariations);
-      
-      console.log(`❌ Mensaje de número desconocido: ${phoneNumber}`);
+
+    if (!destinatario) {
+      console.log(`❌ Número desconocido: ${phoneNumber} (normalizado: ${incomingNorm})`);
       return res.status(200).send('OK');
     }
 
-    return await processWebhookMessage(req, res, transportista, phoneNumber);
+    return await processWebhookMessage(req, res, destinatario, phoneNumber);
   } catch (error) {
     console.error('Error en webhook:', error);
     res.status(200).send('OK');
@@ -148,103 +253,127 @@ export const handleWebhook = async (req, res) => {
 };
 
 // Procesar mensaje del webhook
-async function processWebhookMessage(req, res, transportista, phoneNumber) {
+async function processWebhookMessage(req, res, destinatario, phoneNumber) {
   const { Body, Latitude, Longitude } = req.body;
 
-  // Buscar sesión activa usando el número del transportista en la BD
+  const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
   const session = await WhatsAppSession.findOne({
-    phoneNumber: transportista.numeroWhatsapp,
+    phoneNumber: sessionPhone,
     status: { $in: ['active', 'waiting_response', 'waiting_location'] }
   }).sort({ createdAt: -1 });
 
-  console.log('  Buscando sesión con número:', transportista.numeroWhatsapp);
   console.log('  Sesión encontrada:', session ? `${session.context} (${session.status})` : 'NO ENCONTRADA');
 
-  // Parsear mensaje con contexto de sesión
-  const parsed = whatsappService.parseIncomingMessage(Body || '', session?.context);
-  console.log('  Mensaje parseado:', parsed);
-
-  // Manejar ubicación
   if (Latitude && Longitude) {
-    await handleLocationReceived(session, transportista, Latitude, Longitude);
+    await handleLocationReceived(session, destinatario, Latitude, Longitude);
     return res.status(200).send('OK');
   }
 
-  // Nota: Ya no requerimos ubicación obligatoria en check-ins
+  if (!session) {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `Hola! No tenés ninguna conversación activa en este momento. Cuando haya un nuevo viaje disponible te avisamos. 🚚`
+    );
+    return res.status(200).send('OK');
+  }
 
-  // Manejar según tipo de mensaje
-  if (parsed.type === 'trip_confirmation') {
-    await handleTripConfirmation(session, transportista, parsed.trucks);
+  const parsed = whatsappService.parseIncomingMessage(Body || '', session?.context);
+  console.log('  Mensaje parseado:', parsed);
+
+  if (session?.context === 'waiting_truck_count') {
+    await handleTruckCountResponse(session, destinatario, Body);
+  } else if (parsed.type === 'offer_full_trucks') {
+    await handleOfferFullTrucks(session, destinatario, parsed.count);
+  } else if (parsed.type === 'offer_fewer_trucks') {
+    await handleOfferFewerTrucks(session, destinatario);
   } else if (parsed.type === 'trip_rejection') {
-    await handleTripRejection(session, transportista);
+    await handleTripRejection(session, destinatario);
   } else if (parsed.type === 'check_in') {
-    await handleCheckIn(session, transportista, parsed.status);
+    await handleCheckIn(session, destinatario, parsed.status);
   } else {
-    console.log(`Mensaje no reconocido de ${transportista.razonSocial}: ${Body}`);
+    console.log(`Mensaje no reconocido de ${destinatario.nombre}: ${Body}`);
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `No entendí tu respuesta. Por favor respondé con:\n1️⃣ Tengo los camiones disponibles\n2️⃣ Tengo menos camiones disponibles\n3️⃣ No tengo disponibilidad`
+    );
   }
 
   return res.status(200).send('OK');
 }
 
-// Funciones auxiliares para manejar respuestas
-async function handleTripConfirmation(session, transportista, trucks) {
-  if (!session || !session.viajeId) {
+// --- Handlers del flujo de oferta ---
+
+// Transportista responde "Tengo XX camiones disponibles" (cantidad exacta o completa)
+async function handleOfferFullTrucks(session, destinatario, count) {
+  if (!session?.viajeId) return;
+  const viaje = await Viaje.findById(session.viajeId);
+  if (!viaje) return;
+
+  const viajeAbierto = viaje.estado !== 'documentacion' && viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado';
+  const cantidad = count || viaje.camionesSolicitados;
+
+  session.metadata = { ...(session.metadata || {}), camionesCometidos: cantidad };
+  session.status = 'completed';
+  const saved = await session.save();
+  console.log(`✅ Sesión ${session._id} marcada completed, status en BD: ${saved.status}`);
+
+  if (viajeAbierto) {
     await whatsappService.sendMessage(
-      transportista.numeroWhatsapp,
-      '❌ No hay una oferta de viaje activa para confirmar.'
+      destinatario.numeroWhatsapp,
+      `Se registró la reserva del cupo de tus camiones. A la brevedad nos pondremos en contacto para coordinar.`
+    );
+  } else {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `Este viaje ya fue asignado. Pronto saldrán nuevas oportunidades.`
+    );
+  }
+}
+
+// Transportista responde "Tengo menos camiones disponibles"
+async function handleOfferFewerTrucks(session, destinatario) {
+  if (!session?.viajeId) return;
+  session.context = 'waiting_truck_count';
+  session.status = 'active';
+  await session.save();
+  await whatsappService.sendMessage(
+    destinatario.numeroWhatsapp,
+    `¿Qué cantidad de camiones tenés disponibles? Ingresá sólo el número.`
+  );
+}
+
+// Transportista responde con número cuando se le preguntó cuántos tiene
+async function handleTruckCountResponse(session, destinatario, body) {
+  const count = parseInt((body || '').trim(), 10);
+  if (isNaN(count) || count <= 0) {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `Por favor ingresá solo un número válido. ¿Cuántos camiones tenés disponibles?`
     );
     return;
   }
 
   const viaje = await Viaje.findById(session.viajeId);
-  if (!viaje) {
-    await whatsappService.sendMessage(
-      transportista.numeroWhatsapp,
-      '❌ El viaje ya no está disponible.'
-    );
-    session.status = 'completed';
-    await session.save();
-    return;
-  }
+  if (!viaje) return;
 
-  // Verificar que el viaje no esté ya asignado a otro transportista
-  if (viaje.transportista && viaje.transportista.toString() !== transportista._id.toString()) {
-    await whatsappService.sendMessage(
-      transportista.numeroWhatsapp,
-      `❌ El viaje #${viaje.numeroViaje} ya fue asignado a otro transportista.`
-    );
-    session.status = 'completed';
-    await session.save();
-    return;
-  }
+  const viajeAbierto = viaje.estado !== 'documentacion' && viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado';
 
-  // Asignar transportista
-  viaje.transportista = transportista._id;
-  viaje.estado = 'confirmado';
-  
-  // Generar token de tracking si no existe
-  if (!viaje.trackingToken) {
-    const crypto = await import('crypto');
-    viaje.trackingToken = crypto.randomBytes(32).toString('hex');
-  }
-  
-  await viaje.save();
-
-  // Enviar detalles completos con link de tracking
-  await whatsappService.sendTripDetailsWithTracking(transportista, viaje);
-
-  // Cerrar sesión de oferta
+  session.metadata = { ...(session.metadata || {}), camionesCometidos: count };
+  session.context = 'trip_offer';
   session.status = 'completed';
   await session.save();
 
-  // Crear nueva sesión para check-ins
-  await WhatsAppSession.create({
-    phoneNumber: transportista.numeroWhatsapp,
-    transportistaId: transportista._id,
-    viajeId: viaje._id,
-    status: 'active',
-    context: 'check_in'
-  });
+  if (viajeAbierto) {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `Se registró la reserva del cupo de tus camiones. A la brevedad nos pondremos en contacto para coordinar.`
+    );
+  } else {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `Este viaje ya fue asignado. Pronto saldrán nuevas oportunidades.`
+    );
+  }
 }
 
 async function handleTripRejection(session, transportista) {
