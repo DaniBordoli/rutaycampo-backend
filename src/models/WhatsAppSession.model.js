@@ -25,7 +25,7 @@ const whatsappSessionSchema = new mongoose.Schema({
   },
   context: {
     type: String,
-    enum: ['trip_offer', 'check_in', 'general', 'problem_report', 'waiting_truck_count'],
+    enum: ['trip_offer', 'check_in', 'general', 'problem_report', 'waiting_truck_count', 'trip_starting'],
     default: 'general'
   },
   lastMessageAt: {
