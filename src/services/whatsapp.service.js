@@ -207,11 +207,12 @@ Cuando llegues al punto de origen respondé:
     return await this.sendMessage(destinatario.numeroWhatsapp, message);
   }
 
-  async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado) {
+  async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado, trackingUrl = null) {
+    const trackingLine = trackingUrl ? `\n\n📍 *Activá tu GPS de seguimiento:*\n${trackingUrl}` : '';
     const prompts = {
       cargado:     `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando cargues el total de la producción respondé:\n\n1️⃣ - Carga realizada`,
       iniciado:    `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando comiences el viaje respondé:\n\n1️⃣ - Comienzo el viaje`,
-      en_destino:  `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛 Cuando llegues a destino respondé:\n\n1️⃣ - Llegué a destino`,
+      en_destino:  `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛${trackingLine}\n\nCuando llegues a destino respondé:\n\n1️⃣ - Llegué a destino`,
       finalizado:  `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando descargues el camión respondé:\n\n1️⃣ - Camión descargado`,
     };
     const msg = prompts[siguienteSubEstado];

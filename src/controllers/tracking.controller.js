@@ -1,34 +1,22 @@
 ﻿import Viaje from '../models/Viaje.model.js';
-import crypto from 'crypto';
-import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 
-
-// Generar token único para tracking
-export const generateTrackingToken = async (req, res) => {
+// Obtener datos del viaje por token del slot (sin autenticación)
+export const getSlotByToken = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const viaje = await Viaje.findById(id);
+    const { token } = req.params;
+    const viaje = await Viaje.findOne({ 'camionesAsignados.trackingToken': token });
     if (!viaje) {
-      return res.status(404).json({ message: 'Viaje no encontrado' });
+      return res.status(404).json({ message: 'Token inválido o expirado' });
     }
-
-    // Generar token único si no existe
-    if (!viaje.trackingToken) {
-      viaje.trackingToken = crypto.randomBytes(32).toString('hex');
-      await viaje.save();
-    }
-
-    const trackingUrl = `${process.env.TRACKING_URL || 'http://localhost:5175'}/track/${viaje.trackingToken}`;
-
+    const slot = viaje.camionesAsignados.find(s => s.trackingToken === token);
     res.json({
-      trackingToken: viaje.trackingToken,
-      trackingUrl,
-      viaje: {
-        _id: viaje._id,
-        numeroViaje: viaje.numeroViaje
-      }
+      viajeId: viaje._id,
+      slotId: slot._id,
+      numeroViaje: viaje.numeroViaje,
+      origen: viaje.origen,
+      destino: viaje.destino,
+      fechaProgramada: viaje.fechaProgramada,
     });
   } catch (error) {
     const { status, message } = sanitizeError(error);
@@ -36,92 +24,8 @@ export const generateTrackingToken = async (req, res) => {
   }
 };
 
-// Obtener información del viaje por token (sin autenticación)
-export const getViajeByToken = async (req, res) => {
-  try {
-    const { token } = req.params;
-    
-    const viaje = await Viaje.findOne({ trackingToken: token })
-      .populate('productor', 'razonSocial')
-      .populate('transportista', 'razonSocial');
-
-    if (!viaje) {
-      return res.status(404).json({ message: 'Viaje no encontrado o token inválido' });
-    }
-
-    res.json({
-      viaje: {
-        _id: viaje._id,
-        numeroViaje: viaje.numeroViaje,
-        origen: viaje.origen,
-        destino: viaje.destino,
-        fechaProgramada: viaje.fechaProgramada,
-        estado: viaje.estado,
-        productor: viaje.productor?.razonSocial,
-        transportista: viaje.transportista?.razonSocial,
-        trackingActivo: viaje.trackingActivo
-      }
-    });
-  } catch (error) {
-    const { status, message } = sanitizeError(error);
-    res.status(status).json({ message });
-  }
-};
-
-// Iniciar tracking
-export const startTracking = async (req, res) => {
-  try {
-    const { token } = req.params;
-    
-    const viaje = await Viaje.findOne({ trackingToken: token });
-    if (!viaje) {
-      return res.status(404).json({ message: 'Viaje no encontrado o token inválido' });
-    }
-
-    viaje.trackingActivo = true;
-    await viaje.save();
-
-    // Notificar al dashboard via WebSocket
-    io.to(`trip-${viaje._id}`).emit('tracking-started', {
-      tripId: viaje._id,
-      timestamp: new Date()
-    });
-
-    res.json({ message: 'Tracking iniciado', trackingActivo: true });
-  } catch (error) {
-    const { status, message } = sanitizeError(error);
-    res.status(status).json({ message });
-  }
-};
-
-// Detener tracking
-export const stopTracking = async (req, res) => {
-  try {
-    const { token } = req.params;
-    
-    const viaje = await Viaje.findOne({ trackingToken: token });
-    if (!viaje) {
-      return res.status(404).json({ message: 'Viaje no encontrado o token inválido' });
-    }
-
-    viaje.trackingActivo = false;
-    await viaje.save();
-
-    // Notificar al dashboard via WebSocket
-    io.to(`trip-${viaje._id}`).emit('tracking-stopped', {
-      tripId: viaje._id,
-      timestamp: new Date()
-    });
-
-    res.json({ message: 'Tracking detenido', trackingActivo: false });
-  } catch (error) {
-    const { status, message } = sanitizeError(error);
-    res.status(status).json({ message });
-  }
-};
-
-// Actualizar ubicación en tiempo real
-export const updateLocation = async (req, res) => {
+// Recibir coordenadas del chofer por token del slot
+export const updateSlotLocation = async (req, res) => {
   try {
     const { token } = req.params;
     const { latitude, longitude, speed, accuracy } = req.body;
@@ -130,27 +34,22 @@ export const updateLocation = async (req, res) => {
       return res.status(400).json({ message: 'Latitud y longitud son requeridas' });
     }
 
-    const viaje = await Viaje.findOne({ trackingToken: token });
+    const viaje = await Viaje.findOne({ 'camionesAsignados.trackingToken': token });
     if (!viaje) {
-      return res.status(404).json({ message: 'Viaje no encontrado o token inválido' });
+      return res.status(404).json({ message: 'Token inválido o expirado' });
     }
 
-    if (!viaje.trackingActivo) {
-      return res.status(400).json({ message: 'El tracking no está activo para este viaje' });
-    }
+    const slot = viaje.camionesAsignados.find(s => s.trackingToken === token);
 
-    // Actualizar ubicación actual
+    // Guardar en ubicacionActual del viaje (última posición conocida)
     viaje.ubicacionActual = {
       latitud: parseFloat(latitude),
       longitud: parseFloat(longitude),
       ultimaActualizacion: new Date()
     };
 
-    // Agregar a ruta completa
-    if (!viaje.rutaCompleta) {
-      viaje.rutaCompleta = [];
-    }
-
+    // Agregar al historial de ruta del viaje
+    viaje.rutaCompleta = viaje.rutaCompleta || [];
     viaje.rutaCompleta.push({
       latitud: parseFloat(latitude),
       longitud: parseFloat(longitude),
@@ -161,23 +60,7 @@ export const updateLocation = async (req, res) => {
 
     await viaje.save();
 
-    // Emitir actualización en tiempo real via WebSocket
-    io.to(`trip-${viaje._id}`).emit('location-updated', {
-      tripId: viaje._id,
-      location: {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-        timestamp: new Date(),
-        speed,
-        accuracy
-      }
-    });
-
-    res.json({ 
-      message: 'Ubicación actualizada',
-      location: viaje.ubicacionActual,
-      totalPoints: viaje.rutaCompleta.length
-    });
+    res.json({ message: 'Ubicación actualizada' });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });

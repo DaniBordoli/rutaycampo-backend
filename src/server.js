@@ -6,7 +6,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
 import connectDB from './config/database.js';
 import authRoutes from './routes/auth.routes.js';
 import producerRoutes from './routes/producer.routes.js';
@@ -34,13 +33,6 @@ const httpServer = createServer(app);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
   .split(',')
   .map((o) => o.trim());
-
-const io = new Server(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST']
-  }
-});
 
 connectDB();
 
@@ -82,21 +74,6 @@ app.use('/api/auditoria', auditoriaRoutes);
 
 app.use(errorHandler);
 
-io.on('connection', (socket) => {
-  console.log('Cliente conectado:', socket.id);
-
-  socket.on('join-trip', (tripId) => {
-    socket.join(`trip-${tripId}`);
-    console.log(`Socket ${socket.id} se unió a trip-${tripId}`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
-  });
-});
-
-app.set('io', io);
-
 const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, () => {
@@ -104,4 +81,3 @@ httpServer.listen(PORT, () => {
   console.log(`📡 Ambiente: ${process.env.NODE_ENV || 'development'}`);
 });
 
-export { io };
