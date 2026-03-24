@@ -9,15 +9,43 @@ const camionAsignadoSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Transportista'
   },
+  chofer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Chofer'
+  },
+  choferNombre: {
+    type: String,
+    default: null
+  },
   subEstado: {
     type: String,
     enum: ['pendiente', 'asignado', 'en_origen', 'cargado', 'iniciado', 'en_destino', 'finalizado'],
     default: 'pendiente'
   },
+  importeChofer: {
+    type: Number,
+    default: null
+  },
+  adelanto: {
+    type: Number,
+    default: null
+  },
+  fechaInicio: {
+    type: Date,
+    default: null
+  },
+  fechaFin: {
+    type: Date,
+    default: null
+  },
   cartaDePorte: {
     nombreArchivo: String,
     ruta: String,
     fechaSubida: Date
+  },
+  trackingToken: {
+    type: String,
+    default: null
   },
   checkIns: [{
     tipo: {

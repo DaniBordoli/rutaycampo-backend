@@ -5,6 +5,7 @@ import WhatsAppSession from '../models/WhatsAppSession.model.js';
 import WhatsAppMessage from '../models/WhatsAppMessage.model.js';
 import whatsappService from '../services/whatsapp.service.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
+import crypto from 'crypto';
 
 // Normaliza cualquier número argentino a "549XXXXXXXXXX" (solo dígitos)
 export function normalizePhone(phone) {
@@ -405,12 +406,18 @@ async function handleCheckIn(session, destinatario, body) {
 
   // Actualizar slot del camionero
   const destinatarioId = String(destinatario._id);
+  let slotActualizado = null;
   for (const slot of viaje.camionesAsignados) {
     const tId = String(typeof slot.transportista === 'object' ? slot.transportista?._id : slot.transportista);
     if (tId === destinatarioId || (!slot.transportista && destinatario._coleccion === 'chofer')) {
       slot.subEstado = siguienteSubEstado;
       slot.checkIns = slot.checkIns || [];
       slot.checkIns.push({ tipo: siguienteSubEstado, fechaHora: new Date() });
+      // Generar token de tracking al confirmar inicio de viaje
+      if (siguienteSubEstado === 'iniciado' && !slot.trackingToken) {
+        slot.trackingToken = crypto.randomBytes(16).toString('hex');
+      }
+      slotActualizado = slot;
       break;
     }
   }
@@ -430,7 +437,13 @@ async function handleCheckIn(session, destinatario, body) {
   const nextIdx = CHECK_IN_CHAIN.indexOf(siguienteSubEstado) + 1;
   if (nextIdx < CHECK_IN_CHAIN.length) {
     const nextSubEstado = CHECK_IN_CHAIN[nextIdx];
-    await whatsappService.sendCheckInPrompt(destinatario, viaje, nextSubEstado);
+    // Si el siguiente prompt es en_destino, incluir el link de tracking del slot
+    let trackingUrl = null;
+    if (nextSubEstado === 'en_destino' && slotActualizado?.trackingToken) {
+      const trackingBase = process.env.TRACKING_URL || 'http://localhost:5175';
+      trackingUrl = `${trackingBase}/track/${slotActualizado.trackingToken}`;
+    }
+    await whatsappService.sendCheckInPrompt(destinatario, viaje, nextSubEstado, trackingUrl);
     const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
     await WhatsAppSession.create({
       phoneNumber: sessionPhone,

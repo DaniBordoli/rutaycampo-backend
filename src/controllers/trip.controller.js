@@ -2,7 +2,6 @@
 import Tarifa from '../models/Tarifa.model.js';
 import Chofer from '../models/Chofer.model.js';
 import Transportista from '../models/Transportista.model.js';
-import { io } from '../server.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 
@@ -46,7 +45,17 @@ const populateViajeConChoferes = async (viaje) => {
     const chofer = await Chofer.findById(rawId).lean();
     if (chofer) {
       const esIndependiente = !chofer.transportistas || chofer.transportistas.length === 0;
-      viajeObj.camionesAsignados[idx].transportista = { _id: String(chofer._id), nombre: chofer.nombre, esChoferIndependiente: esIndependiente };
+      let empresaNombre = null;
+      if (!esIndependiente && chofer.transportistas?.length > 0) {
+        const empresa = await Transportista.findById(chofer.transportistas[0]).lean();
+        empresaNombre = empresa?.razonSocial || empresa?.nombre || null;
+      }
+      viajeObj.camionesAsignados[idx].transportista = {
+        _id: String(chofer._id),
+        nombre: chofer.nombre,
+        esChoferIndependiente: esIndependiente,
+        empresaNombre,
+      };
     } else {
       // Fallback: dato legacy donde se guardó un Transportista._id
       const transportista = await Transportista.findById(rawId).lean();
@@ -308,11 +317,6 @@ export const updateTripStatus = async (req, res) => {
     await viaje.save();
     await viaje.populate('productor transportista');
 
-    io.to(`trip-${viaje._id}`).emit('status-updated', {
-      tripId: viaje._id,
-      status: viaje.estado,
-      timestamp: new Date()
-    });
 
     res.json({
       message: 'Estado actualizado exitosamente',
@@ -383,10 +387,6 @@ export const assignTransportista = async (req, res) => {
     await viaje.save();
     await viaje.populate('productor transportista');
 
-    io.to(`trip-${viaje._id}`).emit('transportista-assigned', {
-      tripId: viaje._id,
-      transportista: viaje.transportista
-    });
 
     res.json({
       message: 'Transportista asignado exitosamente',
@@ -423,10 +423,6 @@ export const addCheckIn = async (req, res) => {
 
     await viaje.save();
 
-    io.to(`trip-${viaje._id}`).emit('check-in', {
-      tripId: viaje._id,
-      checkIn: viaje.checkIns[viaje.checkIns.length - 1]
-    });
 
     res.json({
       message: 'Check-in registrado exitosamente',
@@ -633,14 +629,31 @@ export const checkinCamion = async (req, res) => {
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
 
-    io.to(`trip-${viaje._id}`).emit('camion-checkin', {
-      tripId: viaje._id,
-      camionId,
-      tipo,
-      timestamp: new Date()
-    });
 
     res.json({ message: 'Check-in registrado', trip: viajePopulado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const updateTruckDetail = async (req, res) => {
+  try {
+    const { importeChofer, adelanto, fechaInicio, fechaFin } = req.body;
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+
+    const slot = viaje.camionesAsignados.id(req.params.truckId);
+    if (!slot) return res.status(404).json({ message: 'Camión asignado no encontrado' });
+
+    if (importeChofer !== undefined) slot.importeChofer = importeChofer;
+    if (adelanto !== undefined) slot.adelanto = adelanto;
+    if (fechaInicio !== undefined) slot.fechaInicio = fechaInicio || null;
+    if (fechaFin !== undefined) slot.fechaFin = fechaFin || null;
+
+    await viaje.save();
+    const viajePopulado = await populateViajeConChoferes(viaje);
+    res.json({ message: 'Detalle del camión actualizado', trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
@@ -664,10 +677,6 @@ export const updateLocation = async (req, res) => {
 
     await viaje.save();
 
-    io.to(`trip-${viaje._id}`).emit('location-updated', {
-      tripId: viaje._id,
-      location: viaje.ubicacionActual
-    });
 
     res.json({
       message: 'Ubicación actualizada',
