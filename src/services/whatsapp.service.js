@@ -179,6 +179,51 @@ ${viaje.notas ? `📝 *Notas:* ${viaje.notas}\n` : ''}
 _Viaje ID: ${viaje._id}_`;
   }
 
+  async sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl = null) {
+    const fecha = viaje.fechaProgramada
+      ? new Date(viaje.fechaProgramada).toLocaleDateString('es-AR')
+      : 'próximamente';
+    const origen = viaje.origen?.ciudad || 'origen';
+    const destino = viaje.destino?.ciudad || 'destino';
+    const nombre = destinatario.nombreConductor || destinatario.nombre || destinatario.razonSocial;
+
+    const cartaLine = cartaDePorteUrl
+      ? `\n📄 *Carta de porte:* ${cartaDePorteUrl}`
+      : '';
+
+    const message = `🚛 *Viaje #${viaje.numeroViaje} por iniciar*
+
+Hola ${nombre},
+
+Está por comenzar tu viaje el *${fecha}*.
+
+📍 *Origen:* ${origen}
+📍 *Destino:* ${destino}${cartaLine}
+
+Cuando llegues al punto de origen respondé:
+
+1️⃣ - Llegué a origen`;
+
+    return await this.sendMessage(destinatario.numeroWhatsapp, message);
+  }
+
+  async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado) {
+    const prompts = {
+      cargado:     `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando cargues el total de la producción respondé:\n\n1️⃣ - Carga realizada`,
+      iniciado:    `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando comiences el viaje respondé:\n\n1️⃣ - Comienzo el viaje`,
+      en_destino:  `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛 Cuando llegues a destino respondé:\n\n1️⃣ - Llegué a destino`,
+      finalizado:  `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando descargues el camión respondé:\n\n1️⃣ - Camión descargado`,
+    };
+    const msg = prompts[siguienteSubEstado];
+    if (!msg) return;
+    return await this.sendMessage(destinatario.numeroWhatsapp, msg);
+  }
+
+  async sendViajeCompletado(destinatario, viaje) {
+    const message = `🎉 *¡Gracias!*\n\nTu viaje #${viaje.numeroViaje} fue realizado con éxito.\n\n¡Hasta el próximo viaje!`;
+    return await this.sendMessage(destinatario.numeroWhatsapp, message);
+  }
+
   async sendCheckInMenu(transportista, viaje) {
     // Mapear sub-estado a descripción legible
     const subEstadoLabels = {
@@ -266,17 +311,10 @@ _Viaje ID: ${viaje._id}_`;
   parseIncomingMessage(body, sessionContext) {
     const text = (body || '').trim().toLowerCase();
 
-    // Contexto check_in: números 1-5 son estados del viaje
+    // Contexto check_in: el camionero siempre responde "1" para confirmar el paso actual
     if (sessionContext === 'check_in') {
-      const checkInMap = {
-        '1': 'llegue_a_cargar',
-        '2': 'cargado_saliendo',
-        '3': 'en_camino',
-        '4': 'llegue_a_destino',
-        '5': 'descargado'
-      };
-      if (checkInMap[text]) {
-        return { type: 'check_in', status: checkInMap[text] };
+      if (text === '1') {
+        return { type: 'check_in_confirm' };
       }
     }
 

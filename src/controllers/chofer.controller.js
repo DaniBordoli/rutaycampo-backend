@@ -10,7 +10,7 @@ const getSupabase = () => createClient(process.env.SUPABASE_URL, process.env.SUP
 
 export const createChofer = async (req, res) => {
   try {
-    const { nombre, cuit, responsable, telefono, email, prioridad, notas, licenciaVencimiento, documentos } = req.body;
+    const { nombre, cuit, responsable, telefono, email, prioridad, notas, licenciaVencimiento, documentos, transportistas } = req.body;
 
     const cuitExists = await Chofer.findOne({ cuit: cuit.trim() });
     if (cuitExists) {
@@ -26,7 +26,8 @@ export const createChofer = async (req, res) => {
       prioridad,
       notas,
       licenciaVencimiento,
-      documentos
+      documentos,
+      transportistas: transportistas || []
     });
 
     await chofer.save();

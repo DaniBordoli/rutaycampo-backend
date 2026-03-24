@@ -177,6 +177,10 @@ const viajeSchema = new mongoose.Schema({
   }],
   distancia: Number,
   duracionEstimada: Number,
+  tripStartingNotified: {
+    type: Boolean,
+    default: false
+  },
   historialEstados: [{
     estado: String,
     cambiadoPor: {

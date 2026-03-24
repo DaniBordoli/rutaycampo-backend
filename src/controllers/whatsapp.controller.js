@@ -7,7 +7,7 @@ import whatsappService from '../services/whatsapp.service.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 
 // Normaliza cualquier número argentino a "549XXXXXXXXXX" (solo dígitos)
-function normalizePhone(phone) {
+export function normalizePhone(phone) {
   if (!phone) return '';
   let n = String(phone).replace(/[\s\-\+\(\)]/g, '').replace(/\D/g, '');
   if (n.startsWith('549')) return n;
@@ -264,11 +264,6 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
 
   console.log('  Sesión encontrada:', session ? `${session.context} (${session.status})` : 'NO ENCONTRADA');
 
-  if (Latitude && Longitude) {
-    await handleLocationReceived(session, destinatario, Latitude, Longitude);
-    return res.status(200).send('OK');
-  }
-
   if (!session) {
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
@@ -280,7 +275,11 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
   const parsed = whatsappService.parseIncomingMessage(Body || '', session?.context);
   console.log('  Mensaje parseado:', parsed);
 
-  if (session?.context === 'waiting_truck_count') {
+  if (session?.context === 'trip_starting') {
+    await handleLlegueAOrigen(session, destinatario, Body);
+  } else if (session?.context === 'check_in') {
+    await handleCheckIn(session, destinatario, Body);
+  } else if (session?.context === 'waiting_truck_count') {
     await handleTruckCountResponse(session, destinatario, Body);
   } else if (parsed.type === 'offer_full_trucks') {
     await handleOfferFullTrucks(session, destinatario, parsed.count);
@@ -288,8 +287,6 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
     await handleOfferFewerTrucks(session, destinatario);
   } else if (parsed.type === 'trip_rejection') {
     await handleTripRejection(session, destinatario);
-  } else if (parsed.type === 'check_in') {
-    await handleCheckIn(session, destinatario, parsed.status);
   } else {
     console.log(`Mensaje no reconocido de ${destinatario.nombre}: ${Body}`);
     await whatsappService.sendMessage(
@@ -299,6 +296,154 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
   }
 
   return res.status(200).send('OK');
+}
+
+// --- Handler de viaje por iniciar ---
+
+async function handleLlegueAOrigen(session, destinatario, body) {
+  const text = (body || '').trim().toLowerCase();
+  const keywords = ['1', 'llegué a origen', 'llegue a origen', 'llegué', 'llegue', 'en origen'];
+  const isConfirmation = keywords.some(k => text === k || text.includes(k));
+
+  if (!isConfirmation) {
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `No entendí tu respuesta. Cuando llegues al punto de origen respondé:\n\n1️⃣ - Llegué a origen`
+    );
+    return;
+  }
+
+  if (!session?.viajeId) return;
+
+  const viaje = await Viaje.findById(session.viajeId);
+  if (!viaje) return;
+
+  // Impactar en camionesAsignados: buscar el slot del camionero y actualizar subEstado
+  const destinatarioId = String(destinatario._id);
+  let slotActualizado = false;
+  for (const slot of viaje.camionesAsignados) {
+    const tId = String(typeof slot.transportista === 'object' ? slot.transportista?._id : slot.transportista);
+    if (tId === destinatarioId) {
+      slot.subEstado = 'en_origen';
+      slot.checkIns = slot.checkIns || [];
+      slot.checkIns.push({ tipo: 'en_origen', fechaHora: new Date() });
+      slotActualizado = true;
+      break;
+    }
+  }
+
+  // Fallback: si no encontró por transportista, buscar por choferId
+  if (!slotActualizado && destinatario._coleccion === 'chofer') {
+    for (const slot of viaje.camionesAsignados) {
+      if (!slot.transportista && slot.subEstado === 'asignado') {
+        slot.subEstado = 'en_origen';
+        slot.checkIns = slot.checkIns || [];
+        slot.checkIns.push({ tipo: 'en_origen', fechaHora: new Date() });
+        slotActualizado = true;
+        break;
+      }
+    }
+  }
+
+  // Transición automática a en_curso cuando todos los slots están en_origen
+  const totalSlots = viaje.camionesAsignados.length;
+  const enOrigenCount = viaje.camionesAsignados.filter(s => {
+    const ORDER = ['pendiente','asignado','en_origen','cargado','iniciado','en_destino','finalizado'];
+    return ORDER.indexOf(s.subEstado) >= ORDER.indexOf('en_origen');
+  }).length;
+  if (totalSlots > 0 && enOrigenCount >= totalSlots) {
+    viaje.estado = 'en_curso';
+  }
+
+  await viaje.save();
+
+  // Enviar prompt del siguiente paso: carga
+  await whatsappService.sendCheckInPrompt(destinatario, viaje, 'cargado');
+
+  // Crear nueva sesión check_in para el paso cargado
+  const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
+  await WhatsAppSession.create({
+    phoneNumber: sessionPhone,
+    transportistaId: destinatario._coleccion === 'transportista' ? destinatario._id : undefined,
+    choferId: destinatario._coleccion === 'chofer' ? destinatario._id : undefined,
+    viajeId: viaje._id,
+    status: 'waiting_response',
+    context: 'check_in',
+    metadata: { siguienteSubEstado: 'cargado' },
+  });
+
+  session.status = 'completed';
+  await session.save();
+}
+
+// --- Handler de check-ins encadenados ---
+
+const CHECK_IN_CHAIN = ['cargado', 'iniciado', 'en_destino', 'finalizado'];
+
+async function handleCheckIn(session, destinatario, body) {
+  const text = (body || '').trim().toLowerCase();
+  const siguienteSubEstado = session.metadata?.siguienteSubEstado;
+
+  if (text !== '1') {
+    const label = {
+      cargado:    'Carga realizada',
+      iniciado:   'Comienzo el viaje',
+      en_destino: 'Llegué a destino',
+      finalizado: 'Camión descargado',
+    }[siguienteSubEstado] || 'confirmar';
+    await whatsappService.sendMessage(
+      destinatario.numeroWhatsapp,
+      `No entendí tu respuesta. Respondé:\n\n1️⃣ - ${label}`
+    );
+    return;
+  }
+
+  if (!session?.viajeId || !siguienteSubEstado) return;
+
+  const viaje = await Viaje.findById(session.viajeId);
+  if (!viaje) return;
+
+  // Actualizar slot del camionero
+  const destinatarioId = String(destinatario._id);
+  for (const slot of viaje.camionesAsignados) {
+    const tId = String(typeof slot.transportista === 'object' ? slot.transportista?._id : slot.transportista);
+    if (tId === destinatarioId || (!slot.transportista && destinatario._coleccion === 'chofer')) {
+      slot.subEstado = siguienteSubEstado;
+      slot.checkIns = slot.checkIns || [];
+      slot.checkIns.push({ tipo: siguienteSubEstado, fechaHora: new Date() });
+      break;
+    }
+  }
+
+  // Si todos finalizados → cerrar viaje
+  if (siguienteSubEstado === 'finalizado') {
+    const todosFinalizados = viaje.camionesAsignados.every(s => s.subEstado === 'finalizado');
+    if (todosFinalizados) viaje.estado = 'finalizado';
+  }
+
+  await viaje.save();
+
+  session.status = 'completed';
+  await session.save();
+
+  // Encadenar siguiente paso o cerrar
+  const nextIdx = CHECK_IN_CHAIN.indexOf(siguienteSubEstado) + 1;
+  if (nextIdx < CHECK_IN_CHAIN.length) {
+    const nextSubEstado = CHECK_IN_CHAIN[nextIdx];
+    await whatsappService.sendCheckInPrompt(destinatario, viaje, nextSubEstado);
+    const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
+    await WhatsAppSession.create({
+      phoneNumber: sessionPhone,
+      transportistaId: destinatario._coleccion === 'transportista' ? destinatario._id : undefined,
+      choferId: destinatario._coleccion === 'chofer' ? destinatario._id : undefined,
+      viajeId: viaje._id,
+      status: 'waiting_response',
+      context: 'check_in',
+      metadata: { siguienteSubEstado: nextSubEstado },
+    });
+  } else {
+    await whatsappService.sendViajeCompletado(destinatario, viaje);
+  }
 }
 
 // --- Handlers del flujo de oferta ---
@@ -390,145 +535,108 @@ async function handleTripRejection(session, transportista) {
   await session.save();
 }
 
-async function handleCheckIn(session, transportista, status) {
-  if (!session || !session.viajeId) {
-    await whatsappService.sendMessage(
-      transportista.numeroWhatsapp,
-      '❌ No hay un viaje activo para reportar.'
-    );
-    return;
-  }
-
-  const viaje = await Viaje.findById(session.viajeId);
-  if (!viaje) {
-    return;
-  }
-
-  const statusMap = {
-    'llegue_a_cargar': 'Llegué a cargar',
-    'cargado_saliendo': 'Cargado, saliendo',
-    'en_camino': 'En camino',
-    'llegue_a_destino': 'Llegué a destino',
-    'descargado': 'Descargado'
-  };
-
-  // Agregar check-in al viaje
-  if (!viaje.checkIns) {
-    viaje.checkIns = [];
-  }
-
-  viaje.checkIns.push({
-    tipo: status,
-    descripcion: statusMap[status],
-    fecha: new Date()
-  });
-
-  // Actualizar estado y sub-estado del viaje según el check-in
-  if (status === 'llegue_a_cargar') {
-    viaje.estado = 'en_curso';
-    viaje.subEstado = 'llegue_a_cargar';
-  } else if (status === 'cargado_saliendo') {
-    viaje.estado = 'en_curso';
-    viaje.subEstado = 'cargado_saliendo';
-  } else if (status === 'en_camino') {
-    viaje.estado = 'en_curso';
-    viaje.subEstado = 'en_camino';
-  } else if (status === 'llegue_a_destino') {
-    viaje.estado = 'en_curso';
-    viaje.subEstado = 'llegue_a_destino';
-  } else if (status === 'descargado') {
-    viaje.estado = 'finalizado';
-    viaje.subEstado = 'descargado';
-  }
-
-  await viaje.save();
-
-  // Enviar confirmación de check-in
-  await whatsappService.sendMessage(
-    transportista.numeroWhatsapp,
-    `✅ *Check-in registrado*\n\n${statusMap[status]} - Viaje #${viaje.numeroViaje}`
-  );
-
-  // Si el viaje no está finalizado, enviar menú de check-in para el siguiente paso
-  if (viaje.estado !== 'finalizado') {
-    await whatsappService.sendCheckInMenu(transportista, viaje);
-  } else {
-    // Si el viaje está finalizado, cerrar la sesión
-    await whatsappService.sendMessage(
-      transportista.numeroWhatsapp,
-      '🎉 *Viaje finalizado*\n\nGracias por completar el viaje. ¡Buen trabajo!'
-    );
-    session.status = 'completed';
-  }
-
-  // Mantener sesión activa para futuros check-ins
-  session.status = viaje.estado === 'finalizado' ? 'completed' : 'active';
-  await session.save();
-}
-
-async function handleLocationReceived(session, transportista, latitude, longitude) {
-  if (!session || !session.viajeId) {
-    return;
-  }
-
-  const viaje = await Viaje.findById(session.viajeId);
-  if (!viaje) {
-    return;
-  }
-
-  // Actualizar ubicación en el último check-in
-  if (viaje.checkIns && viaje.checkIns.length > 0) {
-    const lastCheckIn = viaje.checkIns[viaje.checkIns.length - 1];
-    lastCheckIn.ubicacion = {
-      latitud: parseFloat(latitude),
-      longitud: parseFloat(longitude)
-    };
-    await viaje.save();
-  }
-
-  // Confirmar recepción
-  const checkInType = session.metadata?.lastCheckIn || 'estado';
-  await whatsappService.sendCheckInConfirmation(transportista, viaje, checkInType);
-
-  // Volver sesión a activa
-  session.status = 'active';
-  session.metadata = {};
-  await session.save();
-}
-
-export const sendCheckInReminder = async (req, res) => {
+export const sendTripStartingNotifications = async (req, res) => {
   try {
     const { tripId } = req.body;
-    
-    const viaje = await Viaje.findById(tripId).populate('transportista');
-    if (!viaje || !viaje.transportista) {
-      return res.status(404).json({ message: 'Viaje o transportista no encontrado' });
+
+    const viaje = await Viaje.findById(tripId);
+    if (!viaje) {
+      return res.status(404).json({ message: 'Viaje no encontrado' });
     }
 
-    await whatsappService.sendCheckInMenu(viaje.transportista, viaje);
+    if (!viaje.camionesAsignados || viaje.camionesAsignados.length === 0) {
+      return res.status(400).json({ message: 'El viaje no tiene camiones asignados' });
+    }
 
-    res.json({ message: 'Recordatorio enviado' });
+    console.log(`\n🚛 [sendTripStartingNotifications] Viaje #${viaje.numeroViaje}`);
+    console.log(`  camionesAsignados (${viaje.camionesAsignados.length}):`);
+    viaje.camionesAsignados.forEach((c, i) => {
+      console.log(`    [${i}] transportista: ${JSON.stringify(c.transportista)} | subEstado: ${c.subEstado}`);
+    });
+
+    // Recolectar destinatarios únicos desde camionesAsignados
+    const transportistaIds = [...new Set(
+      viaje.camionesAsignados
+        .map(c => c.transportista)
+        .filter(Boolean)
+        .map(t => String(typeof t === 'object' ? t._id : t))
+    )];
+
+    console.log(`  transportistaIds extraídos: ${JSON.stringify(transportistaIds)}`);
+
+    // Buscar en Transportista Y en Chofer (el campo transportista puede referenciar cualquiera)
+    const transportistas = await Transportista.find({ _id: { $in: transportistaIds } });
+    const choferes = await Chofer.find({ _id: { $in: transportistaIds } });
+    console.log(`  Transportistas encontrados: ${transportistas.length} | Choferes encontrados: ${choferes.length}`);
+    transportistas.forEach(t => console.log(`    [T] ${t.razonSocial} | WA: ${t.numeroWhatsapp || 'SIN NÚMERO'}`));
+    choferes.forEach(c => console.log(`    [C] ${c.nombre} | Tel: ${c.telefono || 'SIN NÚMERO'}`));
+
+    // Unificar en lista de destinatarios normalizados
+    const destinatarios = [
+      ...transportistas.map(t => ({
+        _id: t._id,
+        nombre: t.razonSocial,
+        razonSocial: t.razonSocial,
+        nombreConductor: t.nombreConductor || t.razonSocial,
+        numeroWhatsapp: t.numeroWhatsapp,
+        _coleccion: 'transportista',
+      })),
+      ...choferes.map(c => ({
+        _id: c._id,
+        nombre: c.nombre,
+        razonSocial: c.nombre,
+        nombreConductor: c.nombre,
+        numeroWhatsapp: c.telefono,
+        _coleccion: 'chofer',
+      })),
+    ];
+
+    const results = [];
+    for (const destinatario of destinatarios) {
+      if (!destinatario.numeroWhatsapp) {
+        results.push({ nombre: destinatario.nombre, success: false, error: 'Sin número WhatsApp' });
+        continue;
+      }
+      try {
+        // Buscar la carta de porte del slot correspondiente
+        const slot = viaje.camionesAsignados.find(s => {
+          const sId = String(typeof s.transportista === 'object' ? s.transportista?._id : s.transportista);
+          return sId === String(destinatario._id);
+        });
+        const cartaDePorteUrl = slot?.cartaDePorte?.ruta || null;
+
+        await whatsappService.sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl);
+
+        const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
+        await WhatsAppSession.updateMany(
+          { phoneNumber: sessionPhone, viajeId: viaje._id, status: { $in: ['active', 'waiting_response'] } },
+          { status: 'completed' }
+        );
+        await WhatsAppSession.create({
+          phoneNumber: sessionPhone,
+          transportistaId: destinatario._coleccion === 'transportista' ? destinatario._id : undefined,
+          choferId: destinatario._coleccion === 'chofer' ? destinatario._id : undefined,
+          viajeId: viaje._id,
+          status: 'waiting_response',
+          context: 'trip_starting',
+        });
+
+        results.push({ nombre: destinatario.nombre, success: true });
+      } catch (err) {
+        results.push({ nombre: destinatario.nombre, success: false, error: err.message });
+      }
+    }
+
+    res.json({
+      message: 'Notificaciones enviadas',
+      results,
+      total: destinatarios.length,
+      successful: results.filter(r => r.success).length,
+    });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });
   }
 };
 
-export const sendTripUpdate = async (req, res) => {
-  try {
-    const { tripId, message } = req.body;
-    
-    const viaje = await Viaje.findById(tripId).populate('transportista');
-    if (!viaje || !viaje.transportista) {
-      return res.status(404).json({ message: 'Viaje o transportista no encontrado' });
-    }
-
-    await whatsappService.sendTripUpdate(viaje.transportista, viaje, message);
-
-    res.json({ message: 'Actualización enviada' });
-  } catch (error) {
-    const { status, message } = sanitizeError(error);
-    res.status(status).json({ message });
-  }
-};
 

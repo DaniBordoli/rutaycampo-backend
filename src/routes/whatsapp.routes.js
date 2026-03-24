@@ -2,9 +2,8 @@ import express from 'express';
 import { 
   sendOfferToCarriers, 
   handleWebhook, 
-  sendCheckInReminder,
-  sendTripUpdate,
-  getTripOffers
+  getTripOffers,
+  sendTripStartingNotifications
 } from '../controllers/whatsapp.controller.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -19,10 +18,7 @@ router.post('/send-offer', authenticate, sendOfferToCarriers);
 // Webhook para recibir mensajes de Twilio
 router.post('/webhook', handleWebhook);
 
-// Enviar recordatorio de check-in
-router.post('/send-reminder', authenticate, sendCheckInReminder);
-
-// Enviar actualización de viaje
-router.post('/send-update', authenticate, sendTripUpdate);
+// Notificar a camioneros que el viaje está por iniciar
+router.post('/send-trip-starting', authenticate, sendTripStartingNotifications);
 
 export default router;

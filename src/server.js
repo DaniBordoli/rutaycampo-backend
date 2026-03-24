@@ -23,6 +23,7 @@ import { csrfProtection } from './middleware/csrf.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { startReactivationJob } from './jobs/reactivateTransportistas.job.js';
+import { startTripStartingJob } from './jobs/tripStarting.job.js';
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ const io = new Server(httpServer, {
 connectDB();
 
 startReactivationJob();
+startTripStartingJob();
 
 app.use(helmet({
   contentSecurityPolicy: false,
