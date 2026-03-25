@@ -1,5 +1,6 @@
 import Chofer from '../models/Chofer.model.js';
 import Transportista from '../models/Transportista.model.js';
+import Usuario from '../models/Usuario.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 import { upload, uploadToSupabaseMultiple } from '../middleware/upload.js';
@@ -14,7 +15,19 @@ export const createChofer = async (req, res) => {
 
     const cuitExists = await Chofer.findOne({ cuit: cuit.trim() });
     if (cuitExists) {
-      return res.status(400).json({ message: 'Ya existe un chofer con ese CUIT' });
+      return res.status(409).json({ message: 'Ya existe un chofer con ese CUIT', field: 'cuit' });
+    }
+
+    if (email) {
+      const emailNorm = email.toLowerCase().trim();
+      const [existingChofer, existingTransportista, existingUsuario] = await Promise.all([
+        Chofer.findOne({ email: emailNorm }),
+        Transportista.findOne({ email: emailNorm }),
+        Usuario.findOne({ email: emailNorm }),
+      ]);
+      if (existingChofer || existingTransportista || existingUsuario) {
+        return res.status(409).json({ message: `El email ${email} ya está registrado en el sistema`, field: 'email' });
+      }
     }
 
     const chofer = new Chofer({

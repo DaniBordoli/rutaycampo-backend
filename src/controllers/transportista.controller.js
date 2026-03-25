@@ -1,12 +1,34 @@
 ﻿import Transportista from '../models/Transportista.model.js';
 import Camion from '../models/Camion.model.js';
 import Chofer from '../models/Chofer.model.js';
+import Usuario from '../models/Usuario.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
 
 
 export const createTransportista = async (req, res) => {
   try {
+    const { email, cuit } = req.body;
+
+    if (cuit) {
+      const existingCuit = await Transportista.findOne({ cuit: cuit.trim() });
+      if (existingCuit) {
+        return res.status(409).json({ message: 'Ya existe un transportista con ese CUIT', field: 'cuit' });
+      }
+    }
+
+    if (email) {
+      const emailNorm = email.toLowerCase().trim();
+      const [existingTransportista, existingChofer, existingUsuario] = await Promise.all([
+        Transportista.findOne({ email: emailNorm }),
+        Chofer.findOne({ email: emailNorm }),
+        Usuario.findOne({ email: emailNorm }),
+      ]);
+      if (existingTransportista || existingChofer || existingUsuario) {
+        return res.status(409).json({ message: `El email ${email} ya está registrado en el sistema`, field: 'email' });
+      }
+    }
+
     const transportista = await Transportista.create(req.body);
     res.status(201).json({
       message: 'Transportista creado exitosamente',

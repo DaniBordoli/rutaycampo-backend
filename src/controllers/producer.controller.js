@@ -1,5 +1,7 @@
 import Productor from '../models/Productor.model.js';
 import Usuario from '../models/Usuario.model.js';
+import Chofer from '../models/Chofer.model.js';
+import Transportista from '../models/Transportista.model.js';
 import { generateToken } from '../config/jwt.js';
 import crypto from 'crypto';
 import emailService from '../services/email.service.js';
@@ -21,11 +23,16 @@ export const createProducer = async (req, res) => {
       }
     }
     
-    // Verificar si el email ya existe
+    // Verificar si el email ya existe en cualquier entidad
     if (productorData.emailContacto) {
-      const existingUser = await Usuario.findOne({ email: productorData.emailContacto });
-      if (existingUser) {
-        return res.status(409).json({ 
+      const email = productorData.emailContacto.toLowerCase().trim();
+      const [existingUser, existingChofer, existingTransportista] = await Promise.all([
+        Usuario.findOne({ email }),
+        Chofer.findOne({ email }),
+        Transportista.findOne({ email }),
+      ]);
+      if (existingUser || existingChofer || existingTransportista) {
+        return res.status(409).json({
           message: `El email ${productorData.emailContacto} ya está registrado en el sistema`,
           field: 'email'
         });
