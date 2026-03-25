@@ -183,8 +183,8 @@ _Viaje ID: ${viaje._id}_`;
     const fecha = viaje.fechaProgramada
       ? new Date(viaje.fechaProgramada).toLocaleDateString('es-AR')
       : 'próximamente';
-    const origen = viaje.origen?.ciudad || 'origen';
-    const destino = viaje.destino?.ciudad || 'destino';
+    const origen = [viaje.origen?.ciudad, viaje.origen?.provincia].filter(Boolean).join(', ') || 'origen';
+    const destino = [viaje.destino?.ciudad, viaje.destino?.provincia].filter(Boolean).join(', ') || 'destino';
     const nombre = destinatario.nombreConductor || destinatario.nombre || destinatario.razonSocial;
 
     const cartaLine = cartaDePorteUrl
