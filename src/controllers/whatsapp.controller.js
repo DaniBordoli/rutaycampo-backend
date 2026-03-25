@@ -417,6 +417,10 @@ async function handleCheckIn(session, destinatario, body) {
       if (siguienteSubEstado === 'iniciado' && !slot.trackingToken) {
         slot.trackingToken = crypto.randomBytes(16).toString('hex');
       }
+      // Expirar token cuando el slot finaliza
+      if (siguienteSubEstado === 'finalizado') {
+        slot.trackingToken = null;
+      }
       slotActualizado = slot;
       break;
     }

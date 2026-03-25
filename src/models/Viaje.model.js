@@ -47,6 +47,13 @@ const camionAsignadoSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  rutaCompleta: [{
+    latitud: Number,
+    longitud: Number,
+    timestamp: { type: Date, default: Date.now },
+    velocidad: Number,
+    precision: Number
+  }],
   checkIns: [{
     tipo: {
       type: String,
