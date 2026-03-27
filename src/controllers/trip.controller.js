@@ -2,18 +2,35 @@
 import Tarifa from '../models/Tarifa.model.js';
 import Chofer from '../models/Chofer.model.js';
 import Transportista from '../models/Transportista.model.js';
+import Usuario from '../models/Usuario.model.js';
+import Productor from '../models/Productor.model.js';
 import { sanitizeError } from '../utils/sanitizeError.js';
 import { registrarAuditoria } from '../utils/auditoria.js';
+import emailService from '../services/email.service.js';
 
 const checkYTransicionarDocumentacion = (viaje) => {
-  if (viaje.estado !== 'buscando_camiones') return;
+  if (viaje.estado !== 'buscando_camiones') return false;
   const totalSlots = viaje.camionesSolicitados || 0;
-  if (totalSlots === 0) return;
+  if (totalSlots === 0) return false;
   const asignados = viaje.camionesAsignados.filter(
     c => c.camion && c.transportista
   ).length;
   if (asignados >= totalSlots) {
     viaje.estado = 'documentacion';
+    return true;
+  }
+  return false;
+};
+
+const notificarDocumentacionAlProductor = async (viaje) => {
+  try {
+    const productor = await Productor.findById(viaje.productor).lean();
+    if (!productor?.emailContacto) return;
+    const tripUrl = `${process.env.FRONTEND_PRODUCTORES_URL || 'http://localhost:5173'}/viajes/${viaje._id}`;
+    const nombre = productor.nombreContacto || productor.razonSocial;
+    await emailService.sendDocumentacionEmail(productor.emailContacto, nombre, viaje.numeroViaje, tripUrl);
+  } catch (err) {
+    console.error('Error al enviar email de documentación:', err.message);
   }
 };
 
@@ -251,8 +268,11 @@ export const confirmarTarifa = async (req, res) => {
   try {
     const { precioSistema, precioProductor, precioFinal, pagoChofer, notas } = req.body;
 
-    if (!precioFinal || !pagoChofer) {
+    if (precioFinal == null || pagoChofer == null) {
       return res.status(400).json({ message: 'precioFinal y pagoChofer son requeridos' });
+    }
+    if (Number(precioFinal) <= 0 || Number(pagoChofer) <= 0) {
+      return res.status(400).json({ message: 'precioFinal y pagoChofer deben ser mayores a 0' });
     }
 
     const viaje = await Viaje.findById(req.params.id);
@@ -342,6 +362,10 @@ export const proposePrice = async (req, res) => {
     const viaje = await Viaje.findById(id);
     if (!viaje) {
       return res.status(404).json({ message: 'Viaje no encontrado' });
+    }
+
+    if (price == null || Number(price) <= 0) {
+      return res.status(400).json({ message: 'El precio debe ser mayor a 0' });
     }
 
     // Verificar que el usuario sea el productor del viaje
@@ -455,6 +479,11 @@ export const recalcularEstado = async (req, res) => {
     }
 
     await viaje.save();
+
+    if (estadoAnterior !== 'documentacion' && viaje.estado === 'documentacion') {
+      notificarDocumentacionAlProductor(viaje).catch(console.error);
+    }
+
     res.json({ message: 'Estado recalculado', estadoAnterior, estadoActual: viaje.estado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
@@ -482,9 +511,13 @@ export const assignCamion = async (req, res) => {
       importeChofer: viaje.pagoChofer || null
     });
 
-    checkYTransicionarDocumentacion(viaje);
+    const transicionoADoc = checkYTransicionarDocumentacion(viaje);
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
+
+    if (transicionoADoc) {
+      notificarDocumentacionAlProductor(viaje).catch(console.error);
+    }
 
     await registrarAuditoria({
       realizadoPor: req.user._id,
@@ -545,9 +578,13 @@ export const updateTruckDriver = async (req, res) => {
     } else if (!transportistaId) {
       truck.subEstado = 'pendiente';
     }
-    checkYTransicionarDocumentacion(viaje);
+    const transicionoADoc = checkYTransicionarDocumentacion(viaje);
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
+
+    if (transicionoADoc) {
+      notificarDocumentacionAlProductor(viaje).catch(console.error);
+    }
 
     res.json({ message: 'Chofer actualizado exitosamente', trip: viajePopulado });
   } catch (error) {
@@ -568,9 +605,13 @@ export const updateTruckVehicle = async (req, res) => {
     if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
 
     truck.camion = camionId;
-    checkYTransicionarDocumentacion(viaje);
+    const transicionoADoc = checkYTransicionarDocumentacion(viaje);
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
+
+    if (transicionoADoc) {
+      notificarDocumentacionAlProductor(viaje).catch(console.error);
+    }
 
     res.json({ message: 'Camión actualizado exitosamente', trip: viajePopulado });
   } catch (error) {

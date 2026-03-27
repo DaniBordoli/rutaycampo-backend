@@ -171,12 +171,13 @@ export const sendOfferToCarriers = async (req, res) => {
 
 export const handleWebhook = async (req, res) => {
   try {
-    const { 
-      MessageSid, 
-      From, 
-      To, 
-      Body, 
-      Latitude, 
+    const {
+      MessageSid,
+      From,
+      To,
+      Body,
+      ButtonPayload,
+      Latitude,
       Longitude,
       MediaUrl0,
       MediaContentType0
@@ -188,6 +189,7 @@ export const handleWebhook = async (req, res) => {
     console.log('  From:', From);
     console.log('  Phone:', phoneNumber);
     console.log('  Body:', Body);
+    if (ButtonPayload) console.log('  ButtonPayload:', ButtonPayload);
 
     // Guardar mensaje entrante
     await WhatsAppMessage.create({
@@ -246,7 +248,7 @@ export const handleWebhook = async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    return await processWebhookMessage(req, res, destinatario, phoneNumber);
+    return await processWebhookMessage(req, res, destinatario, phoneNumber, ButtonPayload);
   } catch (error) {
     console.error('Error en webhook:', error);
     res.status(200).send('OK');
@@ -254,8 +256,8 @@ export const handleWebhook = async (req, res) => {
 };
 
 // Procesar mensaje del webhook
-async function processWebhookMessage(req, res, destinatario, phoneNumber) {
-  const { Body, Latitude, Longitude } = req.body;
+async function processWebhookMessage(req, res, destinatario, phoneNumber, buttonPayload) {
+  const { Body } = req.body;
 
   const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
   const session = await WhatsAppSession.findOne({
@@ -273,13 +275,13 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
     return res.status(200).send('OK');
   }
 
-  const parsed = whatsappService.parseIncomingMessage(Body || '', session?.context);
+  const parsed = whatsappService.parseIncomingMessage(Body || '', session?.context, buttonPayload);
   console.log('  Mensaje parseado:', parsed);
 
   if (session?.context === 'trip_starting') {
-    await handleLlegueAOrigen(session, destinatario, Body);
+    await handleLlegueAOrigen(session, destinatario, Body, buttonPayload);
   } else if (session?.context === 'check_in') {
-    await handleCheckIn(session, destinatario, Body);
+    await handleCheckIn(session, destinatario, Body, buttonPayload);
   } else if (session?.context === 'waiting_truck_count') {
     await handleTruckCountResponse(session, destinatario, Body);
   } else if (parsed.type === 'offer_full_trucks') {
@@ -292,7 +294,7 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
     console.log(`Mensaje no reconocido de ${destinatario.nombre}: ${Body}`);
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Por favor respondé con:\n1️⃣ Tengo los camiones disponibles\n2️⃣ Tengo menos camiones disponibles\n3️⃣ No tengo disponibilidad`
+      `No entendí tu respuesta. Por favor usá los botones o respondé con:\n1 - Tengo los camiones disponibles\n2 - Tengo menos camiones disponibles\n3 - No tengo disponibilidad`
     );
   }
 
@@ -301,15 +303,16 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber) {
 
 // --- Handler de viaje por iniciar ---
 
-async function handleLlegueAOrigen(session, destinatario, body) {
+async function handleLlegueAOrigen(session, destinatario, body, buttonPayload) {
+  const isButtonConfirm = buttonPayload === 'checkin_confirm';
   const text = (body || '').trim().toLowerCase();
   const keywords = ['1', 'llegué a origen', 'llegue a origen', 'llegué', 'llegue', 'en origen'];
-  const isConfirmation = keywords.some(k => text === k || text.includes(k));
+  const isConfirmation = isButtonConfirm || keywords.some(k => text === k || text.includes(k));
 
   if (!isConfirmation) {
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Cuando llegues al punto de origen respondé:\n\n1️⃣ - Llegué a origen`
+      `No entendí tu respuesta. Usá el botón o respondé con:\n\n1 - Llegué a origen`
     );
     return;
   }
@@ -381,11 +384,12 @@ async function handleLlegueAOrigen(session, destinatario, body) {
 
 const CHECK_IN_CHAIN = ['cargado', 'iniciado', 'en_destino', 'finalizado'];
 
-async function handleCheckIn(session, destinatario, body) {
-  const text = (body || '').trim().toLowerCase();
+async function handleCheckIn(session, destinatario, body, buttonPayload) {
   const siguienteSubEstado = session.metadata?.siguienteSubEstado;
+  const isButtonConfirm = buttonPayload === 'checkin_confirm';
+  const text = (body || '').trim().toLowerCase();
 
-  if (text !== '1') {
+  if (!isButtonConfirm && text !== '1') {
     const label = {
       cargado:    'Carga realizada',
       iniciado:   'Comienzo el viaje',
@@ -394,7 +398,7 @@ async function handleCheckIn(session, destinatario, body) {
     }[siguienteSubEstado] || 'confirmar';
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Respondé:\n\n1️⃣ - ${label}`
+      `No entendí tu respuesta. Usá el botón o respondé:\n\n1 - ${label}`
     );
     return;
   }
@@ -413,12 +417,12 @@ async function handleCheckIn(session, destinatario, body) {
       slot.subEstado = siguienteSubEstado;
       slot.checkIns = slot.checkIns || [];
       slot.checkIns.push({ tipo: siguienteSubEstado, fechaHora: new Date() });
-      // Generar token de tracking al confirmar inicio de viaje
-      if (siguienteSubEstado === 'iniciado' && !slot.trackingToken) {
-        slot.trackingToken = crypto.randomBytes(16).toString('hex');
+      if (siguienteSubEstado === 'iniciado') {
+        if (!slot.fechaInicio) slot.fechaInicio = new Date();
+        if (!slot.trackingToken) slot.trackingToken = crypto.randomBytes(16).toString('hex');
       }
-      // Expirar token cuando el slot finaliza
       if (siguienteSubEstado === 'finalizado') {
+        if (!slot.fechaFin) slot.fechaFin = new Date();
         slot.trackingToken = null;
       }
       slotActualizado = slot;

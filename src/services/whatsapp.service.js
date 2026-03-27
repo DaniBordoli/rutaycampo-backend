@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import templateManager from '../utils/whatsappTemplates.js';
 
 const TRANSIENT_TWILIO_CODES = [20429, 20503, 30001, 30002, 30003, 30004, 30005, 30006];
 
@@ -83,9 +84,55 @@ class WhatsAppService {
     throw lastError;
   }
 
+  // Envía un mensaje con botones interactivos usando Twilio Content API.
+  // Si el template no está disponible, cae a texto plano automáticamente.
+  async sendInteractiveMessage(to, templateKey, bodyText, retries = 2) {
+    const client = this.getClient();
+    if (!client) {
+      throw new Error('Twilio no está configurado. Verificá TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN en .env');
+    }
+
+    await templateManager.init(client);
+    const contentSid = templateManager.getSid(templateKey);
+
+    if (!contentSid) {
+      console.warn(`⚠️  Template "${templateKey}" no disponible, enviando texto plano`);
+      return this.sendMessage(to, bodyText, retries);
+    }
+
+    const formattedTo = this.formatPhoneNumber(to);
+    let lastError;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const message = await client.messages.create({
+          from: this.fromNumber,
+          to: formattedTo,
+          contentSid,
+          contentVariables: JSON.stringify({ '1': bodyText }),
+        });
+        console.log(`📤 WhatsApp [btn:${templateKey}] → ${formattedTo} [${message.sid}]`);
+        return { success: true, messageId: message.sid };
+      } catch (error) {
+        lastError = error;
+        const isTransient = TRANSIENT_TWILIO_CODES.includes(error.code);
+        if (isTransient && attempt < retries) {
+          const delay = 500 * (attempt + 1);
+          console.warn(`⚠️  Twilio error ${error.code}, reintentando en ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          break;
+        }
+      }
+    }
+
+    console.error(`❌ WhatsApp interactive falló → ${formattedTo}:`, lastError?.message);
+    throw lastError;
+  }
+
   async sendTripOffer(transportista, viaje) {
     const message = this.buildTripOfferMessage(transportista, viaje);
-    return await this.sendMessage(transportista.numeroWhatsapp, message);
+    return await this.sendInteractiveMessage(transportista.numeroWhatsapp, 'tripOffer', message);
   }
 
   buildTripOfferMessage(transportista, viaje) {
@@ -98,19 +145,16 @@ class WhatsAppService {
 
     return `🚚 *¡Hay un nuevo viaje disponible!*
 
-� Fecha: ${fecha}
-� Origen: ${origen}, ${viaje.origen?.provincia || ''}
-📍 Destino: ${destino}, ${viaje.destino?.provincia || ''}
-� Cantidad de camiones: ${camiones}
-📦 Producto: ${carga}
-💰 Pago: $${precio.toLocaleString('es-AR')}
-
 Hola ${transportista.nombreConductor || transportista.razonSocial},
 
-*Respondé con una de estas opciones:*
-1️⃣ Tengo ${camiones} camiones disponibles
-2️⃣ Tengo menos camiones disponibles
-3️⃣ No tengo disponibilidad`;
+📅 *Fecha:* ${fecha}
+📍 *Origen:* ${origen}, ${viaje.origen?.provincia || ''}
+📍 *Destino:* ${destino}, ${viaje.destino?.provincia || ''}
+🚛 *Camiones:* ${camiones}
+📦 *Producto:* ${carga}
+💰 *Pago:* $${precio.toLocaleString('es-AR')}
+
+¿Tenés disponibilidad?`;
   }
 
   async sendTripDetails(transportista, viaje) {
@@ -208,20 +252,21 @@ Cuando llegues al punto de origen respondé:
 
 1️⃣ - Llegué a origen`;
 
-    return await this.sendMessage(destinatario.numeroWhatsapp, message);
+    return await this.sendInteractiveMessage(destinatario.numeroWhatsapp, 'llegueAOrigen', message);
   }
 
   async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado, trackingUrl = null) {
     const trackingLine = trackingUrl ? `\n\n📍 *Activá tu GPS de seguimiento:*\n${trackingUrl}` : '';
     const prompts = {
-      cargado:     `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando cargues el total de la producción respondé:\n\n1️⃣ - Carga realizada`,
-      iniciado:    `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando comiences el viaje respondé:\n\n1️⃣ - Comienzo el viaje`,
-      en_destino:  `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛${trackingLine}\n\nCuando llegues a destino respondé:\n\n1️⃣ - Llegué a destino`,
-      finalizado:  `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nCuando descargues el camión respondé:\n\n1️⃣ - Camión descargado`,
+      cargado:    `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nUsá el botón cuando cargues el total de la producción.`,
+      iniciado:   `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nUsá el botón cuando comiences el viaje.`,
+      en_destino: `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛${trackingLine}\n\nUsá el botón cuando llegues a destino.`,
+      finalizado: `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nUsá el botón cuando descargues el camión.`,
     };
     const msg = prompts[siguienteSubEstado];
     if (!msg) return;
-    return await this.sendMessage(destinatario.numeroWhatsapp, msg);
+    // siguienteSubEstado coincide exactamente con las keys del templateManager
+    return await this.sendInteractiveMessage(destinatario.numeroWhatsapp, siguienteSubEstado, msg);
   }
 
   async sendViajeCompletado(destinatario, viaje) {
@@ -313,20 +358,25 @@ _Viaje ID: ${viaje._id}_`;
     return await this.sendMessage(transportista.numeroWhatsapp, message);
   }
 
-  parseIncomingMessage(body, sessionContext) {
-    const text = (body || '').trim().toLowerCase();
-
-    // Contexto check_in: el camionero siempre responde "1" para confirmar el paso actual
-    if (sessionContext === 'check_in') {
-      if (text === '1') {
-        return { type: 'check_in_confirm' };
-      }
+  parseIncomingMessage(body, sessionContext, buttonPayload) {
+    // Botones interactivos: el payload es la fuente de verdad
+    if (buttonPayload) {
+      if (buttonPayload === 'offer_full')    return { type: 'offer_full_trucks', count: null };
+      if (buttonPayload === 'offer_fewer')   return { type: 'offer_fewer_trucks' };
+      if (buttonPayload === 'offer_none')    return { type: 'trip_rejection' };
+      if (buttonPayload === 'checkin_confirm') return { type: 'check_in_confirm' };
     }
 
-    // Contexto trip_offer: 1 = tengo todos, 2 = tengo menos, 3 = no tengo
+    const text = (body || '').trim().toLowerCase();
+
+    // Fallback texto para check_in
+    if (sessionContext === 'check_in') {
+      if (text === '1') return { type: 'check_in_confirm' };
+    }
+
+    // Fallback texto para trip_offer
     if (sessionContext === 'trip_offer' || !sessionContext) {
-      if (text === '1' || text.includes('tengo') && text.includes('disponible') && !text.includes('menos')) {
-        // Intentar extraer número de camiones del texto
+      if (text === '1' || (text.includes('tengo') && text.includes('disponible') && !text.includes('menos'))) {
         const numMatch = text.match(/tengo\s+(\d+)\s+camion/);
         const count = numMatch ? parseInt(numMatch[1], 10) : null;
         return { type: 'offer_full_trucks', count };
