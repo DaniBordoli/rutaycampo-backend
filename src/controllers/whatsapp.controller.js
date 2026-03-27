@@ -621,8 +621,9 @@ export const sendTripStartingNotifications = async (req, res) => {
           return sId === String(destinatario._id);
         });
         const cartaDePorteUrl = slot?.cartaDePorte?.ruta || null;
+        const importeChofer = slot?.importeChofer || null;
 
-        await whatsappService.sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl);
+        await whatsappService.sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl, importeChofer);
 
         const sessionPhone = normalizePhone(destinatario.numeroWhatsapp);
         await WhatsAppSession.updateMany(

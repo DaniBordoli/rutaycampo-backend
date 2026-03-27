@@ -45,7 +45,7 @@ class EmailService {
       attachments: [
         {
           filename: 'logo.png',
-          path: path.join(__dirname, '../utils/email-assets/FavIcon.png'),
+          path: path.join(__dirname, '../utils/email-assets/FavIcon.svg'),
           cid: 'logo'
         }
       ]
@@ -78,7 +78,7 @@ class EmailService {
       attachments: [
         {
           filename: 'logo.png',
-          path: path.join(__dirname, '../utils/email-assets/FavIcon.png'),
+          path: path.join(__dirname, '../utils/email-assets/FavIcon.svg'),
           cid: 'logo'
         },
         {

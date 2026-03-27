@@ -63,7 +63,9 @@ const camionAsignadoSchema = new mongoose.Schema({
     fechaHora: { type: Date, default: Date.now },
     ubicacion: { latitud: Number, longitud: Number },
     notas: String
-  }]
+  }],
+  rating: { type: Number, min: 1, max: 5, default: null },
+  ratingNota: { type: String, default: null },
 });
 
 const checkInSchema = new mongoose.Schema({
@@ -227,7 +229,10 @@ const viajeSchema = new mongoose.Schema({
       default: Date.now
     },
     notas: String
-  }]
+  }],
+  rating: { type: Number, min: 1, max: 5, default: null },
+  ratingNota: { type: String, default: null },
+  ratingFecha: { type: Date, default: null }
 }, {
   timestamps: true
 });

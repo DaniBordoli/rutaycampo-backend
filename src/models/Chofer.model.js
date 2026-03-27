@@ -53,6 +53,12 @@ const choferSchema = new mongoose.Schema({
   notas: {
     type: String,
     trim: true
+  },
+  puntuacion: {
+    type: Number,
+    min: 1,
+    max: 5,
+    default: null
   }
 }, {
   timestamps: true

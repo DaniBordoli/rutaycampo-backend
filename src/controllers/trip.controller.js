@@ -272,6 +272,12 @@ export const confirmarTarifa = async (req, res) => {
     viaje.precios.precioConfirmado = precioFinal;
     viaje.precios.precioFinal = precioFinal;
     viaje.pagoChofer = pagoChofer;
+    // Retroactively fill importeChofer on all slots that don't have it set yet
+    for (const slot of viaje.camionesAsignados) {
+      if (slot.importeChofer == null) {
+        slot.importeChofer = pagoChofer;
+      }
+    }
     if (notas) viaje.notas = notas;
     if (viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
       viaje.estado = 'buscando_camiones';
@@ -472,7 +478,8 @@ export const assignCamion = async (req, res) => {
     viaje.camionesAsignados.push({
       camion: camionId,
       transportista: transportistaId,
-      subEstado: 'asignado'
+      subEstado: 'asignado',
+      importeChofer: viaje.pagoChofer || null
     });
 
     checkYTransicionarDocumentacion(viaje);
@@ -584,6 +591,12 @@ export const updateTruckStatus = async (req, res) => {
     if (!truck) return res.status(404).json({ message: 'Camión no encontrado en el viaje' });
 
     truck.subEstado = subEstado;
+    if (subEstado === 'iniciado' && !truck.fechaInicio) {
+      truck.fechaInicio = new Date();
+    }
+    if (subEstado === 'finalizado' && !truck.fechaFin) {
+      truck.fechaFin = new Date();
+    }
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
 
@@ -622,8 +635,16 @@ export const checkinCamion = async (req, res) => {
     camionAsignado.checkIns.push({ tipo, ubicacion, notas });
     camionAsignado.subEstado = SUBESTADO_MAP[tipo];
 
-    if (tipo === 'iniciado' && viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
-      viaje.estado = 'en_curso';
+    if (tipo === 'iniciado') {
+      if (viaje.estado !== 'en_curso' && viaje.estado !== 'finalizado') {
+        viaje.estado = 'en_curso';
+      }
+      if (!camionAsignado.fechaInicio) {
+        camionAsignado.fechaInicio = new Date();
+      }
+    }
+    if (tipo === 'finalizado' && !camionAsignado.fechaFin) {
+      camionAsignado.fechaFin = new Date();
     }
 
     await viaje.save();
@@ -654,6 +675,69 @@ export const updateTruckDetail = async (req, res) => {
     await viaje.save();
     const viajePopulado = await populateViajeConChoferes(viaje);
     res.json({ message: 'Detalle del camión actualizado', trip: viajePopulado });
+  } catch (error) {
+    const { status, message } = sanitizeError(error);
+    res.status(status).json({ message });
+  }
+};
+
+export const rateTrip = async (req, res) => {
+  try {
+    const { rating, nota, driverRatings } = req.body;
+    const userRole = req.user.rol;
+
+    const viaje = await Viaje.findById(req.params.id);
+    if (!viaje) return res.status(404).json({ message: 'Viaje no encontrado' });
+    if (viaje.estado !== 'finalizado') {
+      return res.status(400).json({ message: 'Solo se puede puntuar un viaje finalizado' });
+    }
+
+    if (userRole === 'productor') {
+      // Producer rates overall trip satisfaction
+      if (!rating) return res.status(400).json({ message: 'Se requiere una puntuación' });
+      viaje.rating = rating;
+      viaje.ratingNota = nota || '';
+      viaje.ratingFecha = new Date();
+    } else {
+      // Operador/admin rates individual drivers
+      const choferIdsToUpdate = new Set();
+      if (driverRatings && driverRatings.length > 0) {
+        for (const dr of driverRatings) {
+          if (!dr.rating) continue;
+          const slot = viaje.camionesAsignados.id(dr.slotId);
+          if (slot) {
+            slot.rating = dr.rating;
+            slot.ratingNota = dr.nota || '';
+            if (dr.choferId) choferIdsToUpdate.add(String(dr.choferId));
+          }
+        }
+      }
+      viaje.ratingFecha = new Date();
+      await viaje.save();
+
+      for (const choferId of choferIdsToUpdate) {
+        const allViajes = await Viaje.find({
+          'camionesAsignados.transportista': choferId,
+          'camionesAsignados.rating': { $exists: true, $ne: null }
+        }).lean();
+        const allRatings = [];
+        for (const v of allViajes) {
+          for (const slot of v.camionesAsignados) {
+            if (String(slot.transportista) === choferId && slot.rating) {
+              allRatings.push(slot.rating);
+            }
+          }
+        }
+        if (allRatings.length > 0) {
+          const avg = allRatings.reduce((a, b) => a + b, 0) / allRatings.length;
+          await Chofer.findByIdAndUpdate(choferId, { puntuacion: Math.round(avg * 10) / 10 });
+        }
+      }
+    }
+
+    await viaje.save();
+    const viajePopulado = await populateViajeConChoferes(await Viaje.findById(viaje._id));
+    res.json({ message: 'Puntuación guardada', trip: viajePopulado });
   } catch (error) {
     const { status, message } = sanitizeError(error);
     res.status(status).json({ message });

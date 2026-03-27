@@ -19,7 +19,8 @@ import {
   updateTruckStatus,
   updateTruckDetail,
   checkYTransicionarConfirmado,
-  recalcularEstado
+  recalcularEstado,
+  rateTrip
 } from '../controllers/trip.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { upload, uploadToSupabase } from '../middleware/upload.js';
@@ -48,6 +49,7 @@ router.post('/:id/checkin', authorize('transportista', 'superadmin', 'operador')
 router.patch('/:id/location', authorize('transportista'), updateLocation);
 router.delete('/:id', authorize('superadmin', 'operador'), deleteTrip);
 router.patch('/:id/recalcular-estado', authorize('superadmin', 'operador'), recalcularEstado);
+router.patch('/:id/rating', authorize('superadmin', 'operador', 'productor'), rateTrip);
 
 router.post(
   '/:id/camiones/:camionId/upload/carta-porte',
