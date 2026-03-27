@@ -262,10 +262,10 @@ Cuando llegues al punto de origen respondé:
   async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado, trackingUrl = null) {
     const trackingLine = trackingUrl ? `\n\n📍 *Activá tu GPS de seguimiento:*\n${trackingUrl}` : '';
     const prompts = {
-      cargado:    `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando cargues el total de la producción:\n\n1 - Carga realizada`,
-      iniciado:   `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando comiences el viaje:\n\n1 - Comienzo el viaje`,
-      en_destino: `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛${trackingLine}\n\nRespondé cuando llegues a destino:\n\n1 - Llegué a destino`,
-      finalizado: `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando descargues el camión:\n\n1 - Camión descargado`,
+      cargado:    `✅ *Llegada a origen registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando cargues el total de la producción:\n\n1️⃣ - Carga realizada`,
+      iniciado:   `✅ *Carga registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando comiences el viaje:\n\n1️⃣ - Comienzo el viaje`,
+      en_destino: `✅ *Inicio de viaje registrado*\n\nViaje #${viaje.numeroViaje}\n\n¡Buen viaje! 🚛${trackingLine}\n\nRespondé cuando llegues a destino:\n\n1️⃣ - Llegué a destino`,
+      finalizado: `✅ *Llegada a destino registrada*\n\nViaje #${viaje.numeroViaje}\n\nRespondé cuando descargues el camión:\n\n1️⃣ - Camión descargado`,
     };
     const msg = prompts[siguienteSubEstado];
     if (!msg) return;

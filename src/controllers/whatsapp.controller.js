@@ -312,7 +312,7 @@ async function handleLlegueAOrigen(session, destinatario, body, buttonPayload) {
   if (!isConfirmation) {
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Respondé con:\n\n1 - Llegué a origen`
+      `No entendí tu respuesta. Respondé con:\n\n1️⃣ - Llegué a origen`
     );
     return;
   }
@@ -398,7 +398,7 @@ async function handleCheckIn(session, destinatario, body, buttonPayload) {
     }[siguienteSubEstado] || 'confirmar';
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Respondé con:\n\n1 - ${label}`
+      `No entendí tu respuesta. Respondé con:\n\n1️⃣ - ${label}`
     );
     return;
   }
