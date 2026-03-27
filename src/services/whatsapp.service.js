@@ -179,7 +179,7 @@ ${viaje.notas ? `📝 *Notas:* ${viaje.notas}\n` : ''}
 _Viaje ID: ${viaje._id}_`;
   }
 
-  async sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl = null) {
+  async sendTripStartingNotification(destinatario, viaje, cartaDePorteUrl = null, importeChofer = null) {
     const fecha = viaje.fechaProgramada
       ? new Date(viaje.fechaProgramada).toLocaleDateString('es-AR')
       : 'próximamente';
@@ -191,6 +191,10 @@ _Viaje ID: ${viaje._id}_`;
       ? `\n📄 *Carta de porte:* ${cartaDePorteUrl}`
       : '';
 
+    const importeLine = importeChofer
+      ? `\n💰 *Precio por este viaje:* $${Number(importeChofer).toLocaleString('es-AR')}`
+      : '';
+
     const message = `🚛 *Viaje #${viaje.numeroViaje} por iniciar*
 
 Hola ${nombre},
@@ -198,7 +202,7 @@ Hola ${nombre},
 Está por comenzar tu viaje el *${fecha}*.
 
 📍 *Origen:* ${origen}
-📍 *Destino:* ${destino}${cartaLine}
+📍 *Destino:* ${destino}${importeLine}${cartaLine}
 
 Cuando llegues al punto de origen respondé:
 

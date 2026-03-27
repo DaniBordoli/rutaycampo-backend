@@ -81,14 +81,35 @@ export const getCamiones = async (req, res) => {
 
 export const getCamionById = async (req, res) => {
   try {
-    const camion = await Camion.findById(req.params.id)
-      .populate('transportista', 'razonSocial cuit numeroWhatsapp email');
+    const camion = await Camion.findById(req.params.id).lean();
 
     if (!camion) {
       return res.status(404).json({ message: 'Camión no encontrado' });
     }
 
-    res.json(camion);
+    let transportistaData = null;
+    if (camion.transportista) {
+      transportistaData = await Transportista.findById(camion.transportista)
+        .select('razonSocial cuit numeroWhatsapp email')
+        .lean();
+
+      if (!transportistaData) {
+        const chofer = await Chofer.findById(camion.transportista)
+          .select('nombre cuit telefono email')
+          .lean();
+        if (chofer) {
+          transportistaData = {
+            _id: chofer._id,
+            razonSocial: chofer.nombre,
+            cuit: chofer.cuit,
+            numeroWhatsapp: chofer.telefono,
+            email: chofer.email,
+          };
+        }
+      }
+    }
+
+    res.json({ ...camion, transportista: transportistaData });
   } catch (error) {
     console.error('Error al obtener camión:', error);
     const { status, message } = sanitizeError(error);
