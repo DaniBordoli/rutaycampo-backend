@@ -1,4 +1,9 @@
 import nodemailer from 'nodemailer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class EmailService {
   constructor() {
@@ -36,7 +41,14 @@ class EmailService {
       from: `"Ruta y Campo" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Recuperación de Contraseña - Ruta y Campo',
-      html: this.getPasswordResetTemplate(userName, resetUrl)
+      html: this.getPasswordResetTemplate(userName, resetUrl),
+      attachments: [
+        {
+          filename: 'logo.png',
+          path: path.join(__dirname, '../utils/email-assets/FavIcon.png'),
+          cid: 'logo'
+        }
+      ]
     };
 
     try {
@@ -62,7 +74,29 @@ class EmailService {
       from: `"Ruta y Campo" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Bienvenido a Ruta y Campo - Configura tu Contraseña',
-      html: this.getProducerInvitationTemplate(producerName, invitationUrl)
+      html: this.getProducerInvitationTemplate(producerName, invitationUrl),
+      attachments: [
+        {
+          filename: 'logo.png',
+          path: path.join(__dirname, '../utils/email-assets/FavIcon.png'),
+          cid: 'logo'
+        },
+        {
+          filename: 'background.png',
+          path: path.join(__dirname, '../utils/email-assets/MailBackground.png'),
+          cid: 'mailBackground'
+        },
+        {
+          filename: 'check.svg',
+          path: path.join(__dirname, '../utils/email-assets/Check.svg'),
+          cid: 'checkIcon'
+        },
+        {
+          filename: 'alert.png',
+          path: path.join(__dirname, '../utils/email-assets/Alert.png'),
+          cid: 'alertIcon'
+        }
+      ]
     };
 
     try {
@@ -86,108 +120,82 @@ class EmailService {
         <title>Recuperación de Contraseña</title>
         <style>
           body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
+            color: #1f2937;
+            background-color: #f3f4f6;
+            margin: 0;
             padding: 20px;
           }
           .container {
-            background-color: #f9f9f9;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
+            max-width: 540px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px 30px;
           }
           .logo {
-            background-color: #16a34a;
-            color: white;
             width: 60px;
             height: 60px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 10px;
+            margin-bottom: 30px;
           }
           h1 {
-            color: #16a34a;
-            margin: 10px 0;
+            color: #1f2937;
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 20px 0;
           }
-          .content {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
+          p {
+            color: #4b5563;
+            font-size: 15px;
+            margin: 0 0 15px 0;
           }
           .button {
             display: inline-block;
-            background-color: #16a34a;
-            color: white;
+            background: linear-gradient(to right, #37784C, #5F9C73);
+            color: white !important;
             text-decoration: none;
-            padding: 12px 30px;
-            border-radius: 6px;
-            margin: 20px 0;
-            font-weight: bold;
+            padding: 12px 24px;
+            border-radius: 80px;
+            font-weight: 600;
+            font-size: 15px;
+            margin: 10px 0 20px 0;
           }
-          .button:hover {
-            background-color: #15803d;
+          .link-fallback {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 15px;
+            line-height: 1.5;
+          }
+          .link-fallback a {
+            color: #16a34a;
+            word-break: break-all;
           }
           .footer {
             text-align: center;
-            color: #666;
+            color: #9ca3af;
             font-size: 12px;
             margin-top: 30px;
             padding-top: 20px;
-            border-top: 1px solid #ddd;
-          }
-          .warning {
-            background-color: #fef3c7;
-            border-left: 4px solid #f59e0b;
-            padding: 12px;
-            margin: 20px 0;
-            border-radius: 4px;
           }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <div class="logo">🚚</div>
-            <h1>Ruta y Campo</h1>
-          </div>
+          <img src="cid:logo" class="logo" alt="Logo Ruta y Campo" />
           
-          <div class="content">
-            <h2>Recuperación de Contraseña</h2>
-            <p>Hola ${userName || 'Usuario'},</p>
-            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en Ruta y Campo.</p>
-            <p>Para crear una nueva contraseña, haz clic en el siguiente botón:</p>
-            
-            <div style="text-align: center;">
-              <a href="${resetUrl}" class="button">Restablecer Contraseña</a>
-            </div>
-            
-            <div class="warning">
-              <strong>⚠️ Importante:</strong> Este enlace expirará en 1 hora por razones de seguridad.
-            </div>
-            
-            <p>Si no solicitaste restablecer tu contraseña, puedes ignorar este correo de forma segura.</p>
-            
-            <p style="color: #666; font-size: 14px; margin-top: 20px;">
-              Si el botón no funciona, copia y pega el siguiente enlace en tu navegador:<br>
-              <a href="${resetUrl}" style="color: #16a34a; word-break: break-all;">${resetUrl}</a>
-            </p>
-          </div>
+          <h1>Restablecé tu contraseña ahora</h1>
+          
+          <p>Hola, recibimos una solicitud para restablecer tu contraseña.</p>
+          <p>Si fuiste vos, hacé clic en el siguiente enlace para crear una nueva contraseña:</p>
+          
+          <a href="${resetUrl}" class="button">Restablecer contraseña</a>
+          
+          <p>Ante cualquier duda, estamos para ayudarte.</p>
+          <p>Saludos, El equipo de Ruta y Campo.</p>
           
           <div class="footer">
             <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-            <p>&copy; ${new Date().getFullYear()} Ruta y Campo. Todos los derechos reservados.</p>
+            <p>${new Date().getFullYear()} Ruta y Campo. Todos los derechos reservados.</p>
           </div>
         </div>
       </body>
@@ -205,114 +213,167 @@ class EmailService {
         <title>Bienvenido a Ruta y Campo</title>
         <style>
           body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
+            color: #1f2937;
+            background-color: #f3f4f6;
+            margin: 0;
             padding: 20px;
           }
           .container {
-            background-color: #f9f9f9;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 540px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px 30px;
           }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
+          .header-image {
+            width: 100%;
+            max-width: 540px;
+            height: auto;
+            display: block;
+            margin: -40px -30px 30px -30px;
           }
           .logo {
-            background-color: #16a34a;
-            color: white;
             width: 60px;
             height: 60px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 10px;
+            margin-bottom: 30px;
+            margin-top: 20px;
           }
           h1 {
-            color: #16a34a;
-            margin: 10px 0;
+            color: #1f2937;
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 20px 0;
           }
-          .content {
-            background-color: white;
+          p {
+            color: #4b5563;
+            font-size: 15px;
+            margin: 0 0 15px 0;
+          }
+          .features-box {
+            background-color: #F1F8F3;
+            border-radius: 24px;
             padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
+            margin: 25px 0;
+          }
+          .features-title {
+            color: #45845C;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 0 15px 0;
+          }
+          .features-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+          }
+          .features-list li {
+            color: #45845C;
+            font-size: 15px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .check-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+          }
+          .instruction-text {
+            color: #4b5563;
+            font-size: 15px;
+            margin: 20px 0 15px 0;
           }
           .button {
             display: inline-block;
-            background-color: #16a34a;
-            color: white;
+            background: linear-gradient(to right, #37784C, #5F9C73);
+            color: white !important;
             text-decoration: none;
-            padding: 12px 30px;
-            border-radius: 6px;
-            margin: 20px 0;
-            font-weight: bold;
+            padding: 12px 24px;
+            border-radius: 80px;
+            font-weight: 600;
+            font-size: 15px;
+            margin: 10px 0 20px 0;
           }
-          .button:hover {
-            background-color: #15803d;
+          .info-box {
+            background-color: #EDF2F8;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 20px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+          }
+          .info-box p {
+            color: #3590F3;
+            font-size: 14px;
+            margin: 0;
+            flex: 1;
+          }
+          .alert-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            margin-top: 2px;
+          }
+          .link-fallback {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 15px;
+            line-height: 1.5;
+          }
+          .link-fallback a {
+            color: #16a34a;
+            word-break: break-all;
           }
           .footer {
             text-align: center;
-            color: #666;
+            color: #9ca3af;
             font-size: 12px;
             margin-top: 30px;
             padding-top: 20px;
-            border-top: 1px solid #ddd;
-          }
-          .info-box {
-            background-color: #dbeafe;
-            border-left: 4px solid #3b82f6;
-            padding: 12px;
-            margin: 20px 0;
-            border-radius: 4px;
           }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <div class="logo">🚚</div>
-            <h1>Ruta y Campo</h1>
+          <img src="cid:mailBackground" class="header-image" alt="Ruta y Campo" />
+          
+          <img src="cid:logo" class="logo" alt="Logo Ruta y Campo" />
+          
+          <h1>¡Bienvenido a Ruta y Campo!</h1>
+          
+          <p>Hola ${producerName},</p>
+          <p>Tu cuenta de productor ha sido creada exitosamente en nuestra plataforma.</p>
+          
+          <div class="features-box">
+            <div class="features-title">¿Qué podés hacer en Ruta y Campo?</div>
+            <ul class="features-list">
+              <li><img src="cid:checkIcon" class="check-icon" alt="check" />Solicitar transporte de carga</li>
+              <li><img src="cid:checkIcon" class="check-icon" alt="check" />Ver el estado de tus viajes en tiempo real</li>
+              <li><img src="cid:checkIcon" class="check-icon" alt="check" />Hacer seguimiento GPS de tus envíos</li>
+              <li><img src="cid:checkIcon" class="check-icon" alt="check" />Consultar el historial de viajes</li>
+            </ul>
           </div>
           
-          <div class="content">
-            <h2>¡Bienvenido a Ruta y Campo!</h2>
-            <p>Hola ${producerName},</p>
-            <p>Tu cuenta de productor ha sido creada exitosamente en nuestra plataforma.</p>
-            <p>Para comenzar a utilizar el sistema, necesitás configurar tu contraseña haciendo clic en el siguiente botón:</p>
-            
-            <div style="text-align: center;">
-              <a href="${invitationUrl}" class="button">Configurar mi Contraseña</a>
-            </div>
-            
-            <div class="info-box">
-              <strong>ℹ️ Importante:</strong> Este enlace expirará en 7 días. Si no configurás tu contraseña dentro de este período, deberás solicitar un nuevo enlace de invitación.
-            </div>
-            
-            <p><strong>¿Qué podés hacer en Ruta y Campo?</strong></p>
-            <ul>
-              <li>Solicitar transporte de carga</li>
-              <li>Ver el estado de tus viajes en tiempo real</li>
-              <li>Hacer seguimiento GPS de tus envíos</li>
-              <li>Consultar el historial de viajes</li>
-            </ul>
-            
-            <p style="color: #666; font-size: 14px; margin-top: 20px;">
-              Si el botón no funciona, copia y pega el siguiente enlace en tu navegador:<br>
-              <a href="${invitationUrl}" style="color: #16a34a; word-break: break-all;">${invitationUrl}</a>
-            </p>
+          <p class="instruction-text">Para comenzar a utilizar el sistema, necesitás configurar tu contraseña haciendo clic en el siguiente botón:</p>
+          
+          <a href="${invitationUrl}" class="button">Configurar mi contraseña</a>
+          
+          <div class="link-fallback">
+            Si el botón no funciona, copia y pega el siguiente enlace en tu navegador:<br>
+            <a href="${invitationUrl}">${invitationUrl}</a>
+          </div>
+          
+          <div class="info-box">
+            <img src="cid:alertIcon" class="alert-icon" alt="alert" />
+            <p><strong>Este enlace expirará en 7 días.</strong> Si no configurás tu contraseña dentro de este período, deberás solicitar un nuevo enlace de invitación.</p>
           </div>
           
           <div class="footer">
             <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-            <p>&copy; ${new Date().getFullYear()} Ruta y Campo. Todos los derechos reservados.</p>
+            <p>${new Date().getFullYear()} Ruta y Campo. Todos los derechos reservados.</p>
           </div>
         </div>
       </body>
