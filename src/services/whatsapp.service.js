@@ -132,7 +132,7 @@ class WhatsAppService {
 
   async sendTripOffer(transportista, viaje) {
     const message = this.buildTripOfferMessage(transportista, viaje);
-    return await this.sendInteractiveMessage(transportista.numeroWhatsapp, 'tripOffer', message);
+    return await this.sendMessage(transportista.numeroWhatsapp, message);
   }
 
   buildTripOfferMessage(transportista, viaje) {
@@ -252,7 +252,7 @@ Cuando llegues al punto de origen respondé:
 
 1️⃣ - Llegué a origen`;
 
-    return await this.sendInteractiveMessage(destinatario.numeroWhatsapp, 'llegueAOrigen', message);
+    return await this.sendMessage(destinatario.numeroWhatsapp, message);
   }
 
   async sendCheckInPrompt(destinatario, viaje, siguienteSubEstado, trackingUrl = null) {
@@ -266,7 +266,7 @@ Cuando llegues al punto de origen respondé:
     const msg = prompts[siguienteSubEstado];
     if (!msg) return;
     // siguienteSubEstado coincide exactamente con las keys del templateManager
-    return await this.sendInteractiveMessage(destinatario.numeroWhatsapp, siguienteSubEstado, msg);
+    return await this.sendMessage(destinatario.numeroWhatsapp, msg);
   }
 
   async sendViajeCompletado(destinatario, viaje) {
