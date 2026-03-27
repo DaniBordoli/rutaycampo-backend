@@ -294,7 +294,7 @@ async function processWebhookMessage(req, res, destinatario, phoneNumber, button
     console.log(`Mensaje no reconocido de ${destinatario.nombre}: ${Body}`);
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Por favor usá los botones o respondé con:\n1 - Tengo los camiones disponibles\n2 - Tengo menos camiones disponibles\n3 - No tengo disponibilidad`
+      `No entendí tu respuesta. Por favor respondé con:\n1 - Tengo los camiones disponibles\n2 - Tengo menos camiones disponibles\n3 - No tengo disponibilidad`
     );
   }
 
@@ -312,7 +312,7 @@ async function handleLlegueAOrigen(session, destinatario, body, buttonPayload) {
   if (!isConfirmation) {
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Usá el botón o respondé con:\n\n1 - Llegué a origen`
+      `No entendí tu respuesta. Respondé con:\n\n1 - Llegué a origen`
     );
     return;
   }
@@ -398,7 +398,7 @@ async function handleCheckIn(session, destinatario, body, buttonPayload) {
     }[siguienteSubEstado] || 'confirmar';
     await whatsappService.sendMessage(
       destinatario.numeroWhatsapp,
-      `No entendí tu respuesta. Usá el botón o respondé:\n\n1 - ${label}`
+      `No entendí tu respuesta. Respondé con:\n\n1 - ${label}`
     );
     return;
   }

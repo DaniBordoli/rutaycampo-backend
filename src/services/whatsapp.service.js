@@ -154,7 +154,11 @@ Hola ${transportista.nombreConductor || transportista.razonSocial},
 📦 *Producto:* ${carga}
 💰 *Pago:* $${precio.toLocaleString('es-AR')}
 
-¿Tenés disponibilidad?`;
+¿Tenés disponibilidad?
+
+1 - Tengo todos los camiones
+2 - Tengo menos camiones
+3 - Sin disponibilidad`;
   }
 
   async sendTripDetails(transportista, viaje) {
