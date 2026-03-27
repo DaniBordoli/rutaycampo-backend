@@ -203,6 +203,124 @@ class EmailService {
     `;
   }
 
+  async sendDocumentacionEmail(email, producerName, tripNumber, tripUrl) {
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
+      console.log(`📧 [MOCK] Email de documentación para ${email} — viaje ${tripNumber}`);
+      console.log(`🔗 Trip URL: ${tripUrl}`);
+      return { success: true, mock: true };
+    }
+
+    const mailOptions = {
+      from: `"Ruta y Campo" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Cargá las cartas de porte — Viaje ${tripNumber}`,
+      html: this.getDocumentacionTemplate(producerName, tripNumber, tripUrl),
+      attachments: [
+        {
+          filename: 'logo.png',
+          path: path.join(__dirname, '../utils/email-assets/FavIcon.svg'),
+          cid: 'logo'
+        }
+      ]
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ Email de documentación enviado a ${email} — viaje ${tripNumber}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error al enviar email de documentación:', error);
+      throw new Error('Error al enviar el email de documentación');
+    }
+  }
+
+  getDocumentacionTemplate(producerName, tripNumber, tripUrl) {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cargá las cartas de porte</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 20px;
+          }
+          .container {
+            max-width: 540px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 40px 30px;
+          }
+          .logo {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 30px;
+          }
+          h1 {
+            color: #1f2937;
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 20px 0;
+          }
+          p {
+            color: #4b5563;
+            font-size: 15px;
+            margin: 0 0 15px 0;
+          }
+          .button {
+            display: inline-block;
+            background: linear-gradient(to right, #37784C, #5F9C73);
+            color: white !important;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 80px;
+            font-weight: 600;
+            font-size: 15px;
+            margin: 10px 0 20px 0;
+          }
+          .footer {
+            text-align: center;
+            color: #9ca3af;
+            font-size: 12px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #f3f4f6;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <img src="cid:logo" class="logo" alt="Logo Ruta y Campo" />
+
+          <h1>Cargá las cartas de porte</h1>
+
+          <p>Hola${producerName ? ` ${producerName}` : ''}, tu viaje está listo para que cargues la documentación de las cargas de porte.</p>
+          <p>Para poder continuar con el proceso sin inconvenientes, es importante que completes la información requerida a la brevedad.</p>
+          <p>Podés hacerlo ingresando desde el siguiente enlace:</p>
+
+          <a href="${tripUrl}" class="button">Completar documentación</a>
+
+          <p>Cualquier consulta, estamos para ayudarte.</p>
+          <p>Saludos, El equipo de Ruta y Campo</p>
+
+          <div class="footer">
+            <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+            <p>${new Date().getFullYear()} Ruta y Campo. Todos los derechos reservados.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
   getProducerInvitationTemplate(producerName, invitationUrl) {
     return `
       <!DOCTYPE html>

@@ -62,7 +62,7 @@ const cookieOptions = {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     const usuario = await Usuario.findOne({ email });
     if (!usuario) {
@@ -79,7 +79,11 @@ export const login = async (req, res) => {
 
     const token = generateToken(usuario._id, usuario.rol);
 
-    res.cookie('token', token, cookieOptions);
+    // Si rememberMe es false → cookie de sesión (sin maxAge, se borra al cerrar el browser)
+    const opts = rememberMe
+      ? cookieOptions
+      : { httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite };
+    res.cookie('token', token, opts);
     res.json({
       message: 'Login exitoso',
       token,
@@ -92,7 +96,7 @@ export const login = async (req, res) => {
 };
 
 export const logout = (req, res) => {
-  res.clearCookie('token', cookieOptions);
+  res.clearCookie('token', { httpOnly: cookieOptions.httpOnly, secure: cookieOptions.secure, sameSite: cookieOptions.sameSite });
   res.json({ message: 'Sesión cerrada exitosamente' });
 };
 

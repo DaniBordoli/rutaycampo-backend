@@ -171,6 +171,14 @@ export const updateProducer = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    // Sincronizar email en Usuario si cambió emailContacto
+    if (req.body.emailContacto && req.body.emailContacto !== anterior.emailContacto) {
+      await Usuario.findOneAndUpdate(
+        { productorId: productor._id },
+        { email: req.body.emailContacto.toLowerCase().trim() }
+      );
+    }
+
     const camposAuditables = ['razonSocial', 'cuit', 'nombreContacto', 'apellidoContacto', 'emailContacto', 'telefonoContacto', 'tipoProduccion', 'direccion'];
     const valorAnterior = {};
     const valorNuevo = {};
