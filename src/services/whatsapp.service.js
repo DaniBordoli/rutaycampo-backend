@@ -139,7 +139,7 @@ class WhatsAppService {
     const origen = viaje.origen?.ciudad || 'No especificado';
     const destino = viaje.destino?.ciudad || 'No especificado';
     const fecha = viaje.fechaProgramada ? new Date(viaje.fechaProgramada).toLocaleDateString('es-AR') : 'No especificada';
-    const precio = viaje.precios?.precioConfirmado || viaje.precios?.precioBase || 0;
+    const precio = viaje.pagoChofer || viaje.precios?.precioConfirmado || viaje.precios?.precioBase || 0;
     const carga = viaje.tipoCarga || 'grano';
     const camiones = viaje.camionesSolicitados || 1;
 
